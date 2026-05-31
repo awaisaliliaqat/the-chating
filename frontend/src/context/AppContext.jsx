@@ -11,7 +11,9 @@ export function AppProvider({ children }) {
   const [loading,     setLoading]     = useState(true)
   const [theme,       setTheme]       = useState(localStorage.getItem('s_theme') || 'dark')
   const [toasts,      setToasts]      = useState([])
-  const [onlineUsers, setOnlineUsers] = useState(new Set())
+  const [onlineUsers,    setOnlineUsers]    = useState(new Set())
+  const [availableUsers, setAvailableUsers] = useState(new Map()) // userId -> userObj
+  const [badWordAlerts,  setBadWordAlerts]  = useState([])        // pending admin alerts
 
   // Call state
   const [incomingCall, setIncomingCall] = useState(null) // {from,callId,offer,callType,callerName,callerColor}
@@ -67,7 +69,18 @@ export function AppProvider({ children }) {
     const s = connectSocket(token)
 
     s.on('user_online',  ({ user_id }) => setOnlineUsers(p => new Set([...p, user_id])))
-    s.on('user_offline', ({ user_id }) => setOnlineUsers(p => { const n = new Set(p); n.delete(user_id); return n }))
+    s.on('user_offline', ({ user_id }) => {
+      setOnlineUsers(p => { const n = new Set(p); n.delete(user_id); return n })
+      setAvailableUsers(p => { const n = new Map(p); n.delete(user_id); return n })
+    })
+    s.on('user_availability', ({ user_id, available, user: uObj }) => {
+      setAvailableUsers(p => {
+        const n = new Map(p)
+        if (available && uObj) n.set(user_id, uObj)
+        else n.delete(user_id)
+        return n
+      })
+    })
 
     s.on('call_incoming', d => setIncomingCall({
       from: d.from, callId: d.call_id, offer: d.offer,
@@ -101,8 +114,21 @@ export function AppProvider({ children }) {
       }
     })
 
-    s.on('friend_request', u => addToast(`${u.name} sent you a friend request!`, 'info'))
+    s.on('friend_request',  u => addToast(`${u.name} sent you a friend request!`, 'info'))
     s.on('friend_accepted', u => addToast(`${u.name} accepted your friend request!`, 'success'))
+    s.on('broadcast', d => addToast(`📢 ${d.from}: ${d.message}`, 'warning'))
+    s.on('bad_word_alert', d => {
+      setBadWordAlerts(p => [d, ...p.slice(0, 49)])  // keep last 50
+      addToast(`🚨 Bad word from @${d.sender_name}: "${d.bad_words.join(', ')}"`, 'error')
+    })
+    s.on('force_logout', ({ reason }) => {
+      alert(reason || 'You have been disconnected.')
+      localStorage.removeItem('s_token')
+      disconnectSocket()
+      setUser(null)
+      setOnlineUsers(new Set())
+      window.location.href = '/login'
+    })
   }
 
   // ── Call timer ────────────────────────────────────────────────────────────
@@ -254,7 +280,7 @@ export function AppProvider({ children }) {
   function logout() {
     localStorage.removeItem('s_token')
     disconnectSocket(); cleanupCall()
-    setUser(null); setOnlineUsers(new Set())
+    setUser(null); setOnlineUsers(new Set()); setAvailableUsers(new Map())
   }
 
   return (
@@ -262,7 +288,7 @@ export function AppProvider({ children }) {
       user, setUser, loading,
       theme, toggleTheme: () => setTheme(t => t === 'dark' ? 'light' : 'dark'),
       toasts, addToast, removeToast,
-      onlineUsers,
+      onlineUsers, availableUsers, badWordAlerts, setBadWordAlerts,
       incomingCall, activeCall,
       localStream, remoteStream,
       callDuration, isMuted, isCameraOff,

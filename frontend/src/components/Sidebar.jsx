@@ -11,7 +11,8 @@ const NAV = [
   { path: '/rooms',    icon: '🌐', label: 'Rooms'     },
   { path: '/friends',  icon: '🤝', label: 'Friends'   },
   { path: '/contacts', icon: '📒', label: 'Contacts'  },
-  { path: '/calls',    icon: '📞', label: 'Calls'     },
+  { path: '/call-directory', icon: '📡', label: 'Call Anyone' },
+  { path: '/calls',          icon: '📞', label: 'Call History' },
 ]
 
 export default function Sidebar() {

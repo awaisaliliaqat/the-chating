@@ -15,7 +15,8 @@ import Contacts   from './pages/Contacts'
 import Profile    from './pages/Profile'
 import Calls      from './pages/Calls'
 import AppSettings from './pages/AppSettings'
-import Admin       from './pages/Admin'
+import Admin         from './pages/Admin'
+import CallDirectory from './pages/CallDirectory'
 
 function Layout({ children }) {
   return (
@@ -59,7 +60,8 @@ export default function App() {
         <Route path="/friends"       element={<Priv><Friends     /></Priv>} />
         <Route path="/contacts"      element={<Priv><Contacts    /></Priv>} />
         <Route path="/profile"       element={<Priv><Profile     /></Priv>} />
-        <Route path="/calls"         element={<Priv><Calls       /></Priv>} />
+        <Route path="/calls"          element={<Priv><Calls         /></Priv>} />
+        <Route path="/call-directory" element={<Priv><CallDirectory /></Priv>} />
         <Route path="/settings"      element={<Priv><AppSettings /></Priv>} />
         <Route path="/admin"         element={<Priv><Admin       /></Priv>} />
         <Route path="*" element={<Navigate to={user?'/':'login'} />} />

@@ -15,18 +15,22 @@ def init_db():
     conn = get_db()
     conn.executescript('''
         CREATE TABLE IF NOT EXISTS users (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            name         TEXT    NOT NULL,
-            email        TEXT    NOT NULL UNIQUE,
-            username     TEXT    UNIQUE,
-            password     TEXT    NOT NULL,
-            phone        TEXT    NOT NULL DEFAULT '',
-            bio          TEXT    NOT NULL DEFAULT '',
-            avatar_color TEXT    NOT NULL DEFAULT '#6366f1',
-            avatar_b64   TEXT,
-            is_online    INTEGER NOT NULL DEFAULT 0,
-            last_seen    DATETIME,
-            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP
+            id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+            name               TEXT    NOT NULL,
+            email              TEXT    NOT NULL UNIQUE,
+            username           TEXT    UNIQUE,
+            password           TEXT    NOT NULL,
+            phone              TEXT    NOT NULL DEFAULT '',
+            bio                TEXT    NOT NULL DEFAULT '',
+            avatar_color       TEXT    NOT NULL DEFAULT '#6366f1',
+            avatar_b64         TEXT,
+            is_online          INTEGER NOT NULL DEFAULT 0,
+            available_for_calls INTEGER NOT NULL DEFAULT 0,
+            is_banned           INTEGER NOT NULL DEFAULT 0,
+            ban_reason          TEXT,
+            banned_at           DATETIME,
+            last_seen          DATETIME,
+            created_at         DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS friendships (
@@ -194,6 +198,18 @@ def init_db():
             UNIQUE(room_id, user_id)
         );
 
+        CREATE TABLE IF NOT EXISTS flagged_messages (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id  INTEGER,
+            sender_id   INTEGER NOT NULL,
+            content     TEXT    NOT NULL,
+            bad_words   TEXT    NOT NULL,
+            chat_type   TEXT    NOT NULL DEFAULT 'dm',
+            is_reviewed INTEGER NOT NULL DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
         CREATE TABLE IF NOT EXISTS room_messages (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             room_id    INTEGER NOT NULL,
@@ -209,6 +225,10 @@ def init_db():
     migrations = [
         "ALTER TABLE users ADD COLUMN username TEXT",
         "ALTER TABLE users ADD COLUMN avatar_b64 TEXT",
+        "ALTER TABLE users ADD COLUMN available_for_calls INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN ban_reason TEXT",
+        "ALTER TABLE users ADD COLUMN banned_at DATETIME",
         "ALTER TABLE messages ADD COLUMN msg_type TEXT NOT NULL DEFAULT 'text'",
         "ALTER TABLE messages ADD COLUMN file_b64 TEXT",
         "ALTER TABLE messages ADD COLUMN file_name TEXT",

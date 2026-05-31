@@ -8,6 +8,7 @@ from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
 from dotenv import load_dotenv
 from database import get_db, init_db
+from bad_words import check_bad_words
 
 load_dotenv()
 SECRET_KEY   = os.getenv("SECRET_KEY", "dev-secret")
@@ -51,17 +52,21 @@ def require_auth():
 
 def user_dict(row):
     return {
-        "id":           row["id"],
-        "name":         row["name"],
-        "email":        row["email"],
-        "username":     row["username"],
-        "phone":        row["phone"],
-        "bio":          row["bio"],
-        "avatar_color": row["avatar_color"],
-        "avatar_b64":   row["avatar_b64"],
-        "is_online":    bool(row["is_online"]),
-        "last_seen":    row["last_seen"],
-        "created_at":   row["created_at"],
+        "id":                  row["id"],
+        "name":                row["name"],
+        "email":               row["email"],
+        "username":            row["username"],
+        "phone":               row["phone"],
+        "bio":                 row["bio"],
+        "avatar_color":        row["avatar_color"],
+        "avatar_b64":          row["avatar_b64"],
+        "is_online":           bool(row["is_online"]),
+        "available_for_calls": bool(row["available_for_calls"]),
+        "is_banned":           bool(row["is_banned"]),
+        "ban_reason":          row["ban_reason"],
+        "banned_at":           row["banned_at"],
+        "last_seen":           row["last_seen"],
+        "created_at":          row["created_at"],
     }
 
 def msg_dict(row, reactions=None):
@@ -76,6 +81,43 @@ def get_reactions(db, message_id, table="message_reactions"):
     ).fetchall()
     return [{"emoji": r["emoji"], "count": r["count"],
              "user_ids": [int(x) for x in r["user_ids"].split(",")]} for r in rows]
+
+def notify_admins(event, data):
+    """Emit a socket event to all connected admin users."""
+    db = get_db()
+    admin_users = db.execute("SELECT id FROM users WHERE email IN ({})".format(
+        ",".join("?" * len(ADMIN_EMAILS))
+    ), ADMIN_EMAILS).fetchall()
+    db.close()
+    for a in admin_users:
+        if a["id"] in user_sockets:
+            for sid in user_sockets[a["id"]]:
+                socketio.emit(event, data, to=sid)
+
+def flag_message(db, message_id, sender_id, content, bad_words_found, chat_type="dm"):
+    """Save a flagged message and alert all admins in real-time."""
+    bad_str = ", ".join(bad_words_found)
+    db.execute(
+        "INSERT INTO flagged_messages (message_id, sender_id, content, bad_words, chat_type) VALUES (?,?,?,?,?)",
+        (message_id, sender_id, content, bad_str, chat_type)
+    )
+    db.commit()
+    # Get sender info
+    sender = db.execute("SELECT * FROM users WHERE id=?", (sender_id,)).fetchone()
+    flag_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    # Real-time alert to admins
+    notify_admins("bad_word_alert", {
+        "flag_id":    flag_id,
+        "message_id": message_id,
+        "sender_id":  sender_id,
+        "sender_name": sender["name"] if sender else "Unknown",
+        "sender_email": sender["email"] if sender else "",
+        "sender_color": sender["avatar_color"] if sender else "#6366f1",
+        "content":    content,
+        "bad_words":  bad_words_found,
+        "chat_type":  chat_type,
+        "created_at": datetime.datetime.utcnow().isoformat(),
+    })
 
 def socket_auth(auth_data):
     token = (auth_data or {}).get("token") or request.args.get("token","")
@@ -134,6 +176,9 @@ def login():
     db.close()
     if not user or not bcrypt.checkpw(pwd.encode(), user["password"].encode()):
         return jsonify({"message":"Invalid credentials."}),401
+    if user["is_banned"]:
+        reason = user["ban_reason"] or "No reason provided."
+        return jsonify({"message": f"Your account has been banned. Reason: {reason}"}),403
     return jsonify({"token": make_token(user["id"]), "message":"Logged in!"}),200
 
 @app.route("/api/me", methods=["GET"])
@@ -296,6 +341,39 @@ def cancel_request(tid):
     db.execute("DELETE FROM friendships WHERE requester_id=? AND addressee_id=? AND status='pending'",(uid,tid))
     db.commit(); db.close()
     return jsonify({"message":"Cancelled."}),200
+
+# ── Call Directory ───────────────────────────────────────────────────────────
+
+@app.route("/api/users/available", methods=["GET"])
+def available_users():
+    uid, err = require_auth()
+    if err: return err
+    db   = get_db()
+    rows = db.execute(
+        "SELECT * FROM users WHERE available_for_calls=1 AND id!=? ORDER BY name ASC",
+        (uid,)
+    ).fetchall()
+    result = []
+    for r in rows:
+        u = user_dict(r)
+        u["is_online"] = r["id"] in user_sockets
+        result.append(u)
+    db.close()
+    return jsonify(result), 200
+
+@app.route("/api/users/availability", methods=["PUT"])
+def set_availability():
+    uid, err = require_auth()
+    if err: return err
+    available = bool((request.json or {}).get("available", False))
+    db = get_db()
+    db.execute("UPDATE users SET available_for_calls=? WHERE id=?", (int(available), uid))
+    db.commit()
+    user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    db.close()
+    # Broadcast to everyone
+    socketio.emit("user_availability", {"user_id": uid, "available": available, "user": user_dict(user)}, broadcast=True)
+    return jsonify({"available": available}), 200
 
 # ── Blocking ──────────────────────────────────────────────────────────────────
 
@@ -836,9 +914,10 @@ def on_disconnect():
             del user_sockets[uid]
             now = datetime.datetime.utcnow().isoformat()
             db = get_db()
-            db.execute("UPDATE users SET is_online=0, last_seen=? WHERE id=?",(now,uid))
+            db.execute("UPDATE users SET is_online=0, last_seen=?, available_for_calls=0 WHERE id=?",(now,uid))
             db.commit(); db.close()
-            emit("user_offline",{"user_id":uid},broadcast=True,include_self=False)
+            emit("user_offline",      {"user_id":uid},broadcast=True,include_self=False)
+            emit("user_availability", {"user_id":uid,"available":False},broadcast=True,include_self=False)
 
 @socketio.on("send_message")
 def on_send_message(data):
@@ -862,6 +941,11 @@ def on_send_message(data):
     mid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
     row = db.execute("SELECT * FROM messages WHERE id=?",(mid,)).fetchone()
     msg = _build_message(db, row)
+    # ── Bad word detection ──
+    if content and mtype == "text":
+        found = check_bad_words(content)
+        if found:
+            flag_message(db, mid, uid, content, found, "dm")
     db.close()
     emit("new_message",msg,to=f"user_{to}")
     emit("new_message",msg,to=f"user_{uid}")
@@ -888,6 +972,10 @@ def on_group_message(data):
     msg = {"id":mid,"group_id":gid,"sender_id":uid,"content":content,"msg_type":mtype,
            "file_b64":file_b64,"file_name":file_name,"created_at":datetime.datetime.utcnow().isoformat(),
            "sender_name":sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
+    if content and mtype == "text":
+        found = check_bad_words(content)
+        if found:
+            flag_message(db, mid, uid, content, found, "group")
     emit("group_message",msg,to=f"group_{gid}")
 
 @socketio.on("send_room_message")
@@ -908,6 +996,10 @@ def on_room_message(data):
     msg = {"id":mid,"room_id":rid,"sender_id":uid,"content":content,
            "created_at":datetime.datetime.utcnow().isoformat(),
            "sender_name":sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
+    if content:
+        found = check_bad_words(content)
+        if found:
+            flag_message(db, mid, uid, content, found, "room")
     emit("room_message",msg,to=f"room_{rid}")
 
 @socketio.on("typing")
@@ -1082,7 +1174,195 @@ def admin_delete_user(target_id):
         db.close(); return jsonify({"message":"Cannot delete admin account."}), 400
     db.execute("DELETE FROM users WHERE id=?", (target_id,))
     db.commit(); db.close()
+    # Force disconnect if online
+    if target_id in user_sockets:
+        for sid in list(user_sockets[target_id]):
+            socketio.emit("force_logout", {"reason": "Your account has been deleted."}, to=sid)
     return jsonify({"message": "User deleted."}), 200
+
+@app.route("/api/admin/users/<int:target_id>/ban", methods=["POST"])
+def admin_ban_user(target_id):
+    uid, err = require_admin()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (target_id,)).fetchone()
+    if not user: db.close(); return jsonify({"message":"Not found"}), 404
+    if user["email"].lower() in ADMIN_EMAILS:
+        db.close(); return jsonify({"message":"Cannot ban admin."}), 400
+    now = datetime.datetime.utcnow().isoformat()
+    reason = (d.get("reason") or "").strip() or "Banned by admin."
+    db.execute("UPDATE users SET is_banned=1, ban_reason=?, banned_at=? WHERE id=?", (reason, now, target_id))
+    db.commit(); db.close()
+    # Force disconnect
+    if target_id in user_sockets:
+        for sid in list(user_sockets[target_id]):
+            socketio.emit("force_logout", {"reason": f"You have been banned. Reason: {reason}"}, to=sid)
+    return jsonify({"message": "User banned.", "ban_reason": reason}), 200
+
+@app.route("/api/admin/users/<int:target_id>/unban", methods=["POST"])
+def admin_unban_user(target_id):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE users SET is_banned=0, ban_reason=NULL, banned_at=NULL WHERE id=?", (target_id,))
+    db.commit(); db.close()
+    return jsonify({"message": "User unbanned."}), 200
+
+@app.route("/api/admin/users/<int:target_id>/kick", methods=["POST"])
+def admin_kick_user(target_id):
+    uid, err = require_admin()
+    if err: return err
+    if target_id in user_sockets:
+        for sid in list(user_sockets[target_id]):
+            socketio.emit("force_logout", {"reason": "You have been disconnected by an admin."}, to=sid)
+        return jsonify({"message": "User kicked.", "was_online": True}), 200
+    return jsonify({"message": "User is not online.", "was_online": False}), 200
+
+@app.route("/api/admin/users/<int:target_id>/details", methods=["GET"])
+def admin_user_details(target_id):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (target_id,)).fetchone()
+    if not user: db.close(); return jsonify({"message":"Not found"}), 404
+    friends_count  = db.execute("SELECT COUNT(*) as c FROM friendships WHERE (requester_id=? OR addressee_id=?) AND status='accepted'",(target_id,target_id)).fetchone()["c"]
+    msgs_sent      = db.execute("SELECT COUNT(*) as c FROM messages WHERE sender_id=? AND deleted_at IS NULL",(target_id,)).fetchone()["c"]
+    msgs_received  = db.execute("SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND deleted_at IS NULL",(target_id,)).fetchone()["c"]
+    groups_count   = db.execute("SELECT COUNT(*) as c FROM group_members WHERE user_id=?",(target_id,)).fetchone()["c"]
+    rooms_count    = db.execute("SELECT COUNT(*) as c FROM room_members WHERE user_id=?",(target_id,)).fetchone()["c"]
+    stories_count  = db.execute("SELECT COUNT(*) as c FROM stories WHERE user_id=?",(target_id,)).fetchone()["c"]
+    recent_msgs    = db.execute('''
+        SELECT m.content, m.created_at, m.msg_type, u.name as peer_name
+        FROM messages m JOIN users u ON (CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END = u.id)
+        WHERE (m.sender_id=? OR m.receiver_id=?) AND m.deleted_at IS NULL
+        ORDER BY m.created_at DESC LIMIT 10
+    ''',(target_id,target_id,target_id)).fetchall()
+    db.close()
+    d = user_dict(user)
+    d.update({
+        "friends_count":  friends_count,
+        "msgs_sent":      msgs_sent,
+        "msgs_received":  msgs_received,
+        "groups_count":   groups_count,
+        "rooms_count":    rooms_count,
+        "stories_count":  stories_count,
+        "is_online_live": target_id in user_sockets,
+        "recent_msgs":    [dict(r) for r in recent_msgs],
+    })
+    return jsonify(d), 200
+
+@app.route("/api/admin/broadcast", methods=["POST"])
+def admin_broadcast():
+    uid, err = require_admin()
+    if err: return err
+    d = request.json or {}
+    message = (d.get("message") or "").strip()
+    if not message: return jsonify({"message":"Message required."}), 400
+    db = get_db()
+    admin = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    db.close()
+    socketio.emit("broadcast", {
+        "message": message,
+        "from": admin["name"],
+        "timestamp": datetime.datetime.utcnow().isoformat()
+    }, broadcast=True)
+    return jsonify({"message": f"Broadcast sent to all {len(user_sockets)} online users."}), 200
+
+@app.route("/api/admin/messages", methods=["GET"])
+def admin_messages():
+    uid, err = require_admin()
+    if err: return err
+    page  = max(1, int(request.args.get("page", 1)))
+    limit = 30
+    offset = (page-1) * limit
+    q = (request.args.get("q") or "").strip()
+    db = get_db()
+    where = "WHERE m.deleted_at IS NULL"
+    params = []
+    if q:
+        where += " AND m.content LIKE ?"
+        params.append(f"%{q}%")
+    total = db.execute(f"SELECT COUNT(*) as c FROM messages m {where}", params).fetchone()["c"]
+    rows  = db.execute(f'''
+        SELECT m.*, s.name as sender_name, s.avatar_color as sender_color,
+               r.name as receiver_name, r.avatar_color as receiver_color
+        FROM messages m
+        JOIN users s ON m.sender_id=s.id
+        JOIN users r ON m.receiver_id=r.id
+        {where}
+        ORDER BY m.created_at DESC LIMIT ? OFFSET ?
+    ''', params + [limit, offset]).fetchall()
+    db.close()
+    return jsonify({"messages":[dict(r) for r in rows], "total":total, "page":page, "pages":(total+limit-1)//limit}), 200
+
+@app.route("/api/admin/messages/<int:mid>", methods=["DELETE"])
+def admin_delete_message(mid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    m  = db.execute("SELECT * FROM messages WHERE id=?", (mid,)).fetchone()
+    if not m: db.close(); return jsonify({"message":"Not found"}), 404
+    now = datetime.datetime.utcnow().isoformat()
+    db.execute("UPDATE messages SET deleted_at=?, content='' WHERE id=?", (now, mid))
+    db.commit(); db.close()
+    socketio.emit("message_deleted", {"id": mid}, to=f"user_{m['sender_id']}")
+    socketio.emit("message_deleted", {"id": mid}, to=f"user_{m['receiver_id']}")
+    return jsonify({"message":"Deleted."}), 200
+
+@app.route("/api/admin/flagged", methods=["GET"])
+def admin_flagged():
+    uid, err = require_admin()
+    if err: return err
+    page   = max(1, int(request.args.get("page",1)))
+    limit  = 30
+    offset = (page-1)*limit
+    only_unreviewed = request.args.get("unreviewed","0") == "1"
+    db = get_db()
+    where = "WHERE f.is_reviewed=0" if only_unreviewed else ""
+    total = db.execute(f"SELECT COUNT(*) as c FROM flagged_messages f {where}").fetchone()["c"]
+    rows  = db.execute(f'''
+        SELECT f.*, u.name as sender_name, u.email as sender_email,
+               u.avatar_color as sender_color, u.avatar_b64 as sender_avatar,
+               u.is_banned as sender_banned
+        FROM flagged_messages f
+        JOIN users u ON f.sender_id=u.id
+        {where}
+        ORDER BY f.created_at DESC LIMIT ? OFFSET ?
+    ''', (limit, offset)).fetchall()
+    db.close()
+    return jsonify({"flags":[dict(r) for r in rows],"total":total,"page":page,"pages":(total+limit-1)//limit}), 200
+
+@app.route("/api/admin/flagged/<int:fid>/review", methods=["POST"])
+def admin_review_flag(fid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE flagged_messages SET is_reviewed=1 WHERE id=?", (fid,))
+    db.commit(); db.close()
+    return jsonify({"message":"Marked as reviewed."}), 200
+
+@app.route("/api/admin/flagged/<int:fid>/review", methods=["DELETE"])
+def admin_unreview_flag(fid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE flagged_messages SET is_reviewed=0 WHERE id=?", (fid,))
+    db.commit(); db.close()
+    return jsonify({"message":"Unmarked."}), 200
+
+@app.route("/api/admin/online", methods=["GET"])
+def admin_online():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    online_ids = list(user_sockets.keys())
+    if not online_ids:
+        db.close(); return jsonify([]), 200
+    placeholders = ','.join('?' * len(online_ids))
+    rows = db.execute(f"SELECT * FROM users WHERE id IN ({placeholders})", online_ids).fetchall()
+    db.close()
+    return jsonify([user_dict(r) for r in rows]), 200
 
 if __name__ == "__main__":
     port  = int(os.getenv("PORT",5001))
