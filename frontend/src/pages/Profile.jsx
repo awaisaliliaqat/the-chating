@@ -7,9 +7,11 @@ export default function Profile() {
   const { user, setUser, api, addToast } = useContext(AppContext)
 
   const [form, setForm] = useState({
-    name:  user?.name  || '',
-    phone: user?.phone || '',
-    bio:   user?.bio   || '',
+    name:     user?.name     || '',
+    username: user?.username || '',
+    phone:    user?.phone    || '',
+    bio:      user?.bio      || '',
+    avatar_b64: user?.avatar_b64 || null,
   })
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' })
   const [saving,  setSaving]  = useState(false)
@@ -17,6 +19,14 @@ export default function Profile() {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
   const setP = k => e => setPwdForm(f => ({ ...f, [k]: e.target.value }))
+
+  async function handleAvatarChange(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => setForm(f => ({ ...f, avatar_b64: ev.target.result }))
+    reader.readAsDataURL(file)
+  }
 
   async function handleSaveProfile(e) {
     e.preventDefault()
@@ -52,9 +62,15 @@ export default function Profile() {
     <div className={s.page}>
       {/* Profile header */}
       <div className={s.hero}>
-        <Avatar user={user} size={80} online />
+        <div style={{position:'relative',display:'inline-block'}}>
+          <Avatar user={{...user, avatar_b64: form.avatar_b64}} size={80} online />
+          <label style={{position:'absolute',bottom:0,right:0,background:'var(--accent)',borderRadius:'50%',width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer',fontSize:14,border:'2px solid var(--bg-primary)'}}>
+            📷<input type="file" accept="image/*" style={{display:'none'}} onChange={handleAvatarChange}/>
+          </label>
+        </div>
         <div className={s.heroInfo}>
           <div className={s.heroName}>{user?.name}</div>
+          {user?.username && <div style={{fontSize:13,color:'var(--accent)',fontWeight:600}}>@{user.username}</div>}
           <div className={s.heroEmail}>{user?.email}</div>
           <div className={s.heroMeta}>
             <span>👥 {user?.friends_count || 0} friends</span>
@@ -70,6 +86,9 @@ export default function Profile() {
           <form onSubmit={handleSaveProfile} className={s.form}>
             <label className={s.label}>Display Name</label>
             <input className={s.input} value={form.name} onChange={set('name')} placeholder="Your name" required />
+
+            <label className={s.label}>Username</label>
+            <input className={s.input} value={form.username} onChange={set('username')} placeholder="@username (optional)" />
 
             <label className={s.label}>Phone Number</label>
             <input className={s.input} value={form.phone} onChange={set('phone')} placeholder="+1 234 567 8900" type="tel" />

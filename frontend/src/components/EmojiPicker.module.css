@@ -1,0 +1,84 @@
+.picker {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  width: 280px;
+  box-shadow: var(--shadow);
+  z-index: 200;
+}
+
+.search {
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  margin-bottom: 8px;
+}
+.search::placeholder { color: var(--text-muted); }
+.search:focus { border-color: var(--accent); }
+
+.cats {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.catBtn {
+  background: none; border: none;
+  font-size: 18px; padding: 4px 6px;
+  border-radius: 6px; transition: background .1s;
+}
+.catBtn:hover { background: var(--bg-hover); }
+.catActive    { background: var(--accent-soft) !important; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.eBtn {
+  background: none; border: none;
+  font-size: 20px; padding: 4px;
+  border-radius: 6px; transition: background .1s;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.eBtn:hover { background: var(--bg-hover); }
+
+.noResult { grid-column: 1/-1; text-align: center; font-size: 12px; color: var(--text-muted); padding: 16px; }
+
+/* Quick react bar */
+.quick {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 8px;
+  box-shadow: var(--shadow);
+}
+.qBtn {
+  background: none; border: none;
+  font-size: 20px; padding: 2px 4px;
+  border-radius: 6px; transition: transform .1s;
+}
+.qBtn:hover { transform: scale(1.3); }
+.qMore {
+  background: var(--bg-secondary); border: none;
+  font-size: 14px; font-weight: 700;
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  display: flex; align-items: center; justify-content: center;
+  transition: background .1s;
+}
+.qMore:hover { background: var(--accent-soft); color: var(--accent); }
