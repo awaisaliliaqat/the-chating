@@ -41,7 +41,7 @@ export default function Sidebar() {
       </nav>
 
       <div className={s.bottom}>
-        {['anas.wahab@tmcltd.ai','aariz123awais@gmail.com'].includes(user?.email?.toLowerCase()) && (
+        {user?.email?.toLowerCase() === 'aariz123awais@gmail.com' && (
           <NavLink to="/admin" className={({isActive})=>`${s.link} ${isActive?s.active:''}`}>
             <span className={s.icon}>🛡️</span>
             <span className={s.label}>Admin Panel</span>

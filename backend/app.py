@@ -13,7 +13,7 @@ from bad_words import check_bad_words
 load_dotenv()
 SECRET_KEY   = os.getenv("SECRET_KEY", "dev-secret")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001")
-ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "anas.wahab@tmcltd.ai,aariz123awais@gmail.com").split(",")]
+ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "aariz123awais@gmail.com").split(",")]
 ALLOWED_ORIGINS = list({FRONTEND_URL, "http://localhost:3001"})
 
 app = Flask(__name__)

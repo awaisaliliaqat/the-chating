@@ -6,7 +6,7 @@ import s from './Admin.module.css'
 
 const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📢 Broadcast','📊 Stats']
 
-const ADMIN_EMAILS = ['anas.wahab@tmcltd.ai', 'aariz123awais@gmail.com']
+const ADMIN_EMAILS = ['aariz123awais@gmail.com']
 const isAdmin = (email) => ADMIN_EMAILS.includes(email?.toLowerCase())
 
 function fmt(dt) {
