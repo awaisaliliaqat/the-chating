@@ -1,0 +1,86 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-primary:   #0d0f1a;
+  --bg-secondary: #131626;
+  --bg-card:      #1a1d30;
+  --bg-hover:     #1e2238;
+  --border:       rgba(255,255,255,0.07);
+  --text-primary: #e8eaf0;
+  --text-secondary:#94a3b8;
+  --text-muted:   #64748b;
+  --accent:       #6366f1;
+  --accent-hover: #4f51d0;
+  --accent-soft:  rgba(99,102,241,0.15);
+  --green:        #22c55e;
+  --green-soft:   rgba(34,197,94,0.15);
+  --red:          #ef4444;
+  --red-soft:     rgba(239,68,68,0.15);
+  --yellow:       #f59e0b;
+  --shadow:       0 4px 24px rgba(0,0,0,0.4);
+  --radius:       12px;
+  --radius-sm:    8px;
+  --sidebar-w:    240px;
+}
+
+:root[data-theme="light"] {
+  --bg-primary:   #f0f2f8;
+  --bg-secondary: #e8ebf4;
+  --bg-card:      #ffffff;
+  --bg-hover:     #f1f3fa;
+  --border:       rgba(0,0,0,0.08);
+  --text-primary: #1a1d2e;
+  --text-secondary:#475569;
+  --text-muted:   #94a3b8;
+  --shadow:       0 4px 24px rgba(0,0,0,0.1);
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; font-family: inherit; border: none; }
+input, textarea { font-family: inherit; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* Shared utility classes */
+.flex { display: flex; }
+.items-center { align-items: center; }
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.mt-auto { margin-top: auto; }
+
+/* Spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  display: inline-block;
+}
+
+/* Fade-in */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadeIn .2s ease; }
+
+/* Online dot */
+.online-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  border: 2px solid var(--bg-primary);
+  flex-shrink: 0;
+}

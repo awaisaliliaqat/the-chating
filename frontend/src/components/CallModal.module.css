@@ -1,0 +1,216 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  animation: fadeIn .2s ease;
+}
+
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.modal {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 40px;
+  text-align: center;
+  min-width: 300px;
+  box-shadow: var(--shadow);
+}
+
+.ringing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.callerAvatar {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  font-weight: 700;
+  color: #fff;
+  margin: 0 auto;
+}
+
+.callerName {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+.callTypeLabel {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pulseDots {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pulseDots span {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+.pulseDots span:nth-child(2) { animation-delay: .2s; }
+.pulseDots span:nth-child(3) { animation-delay: .4s; }
+
+@keyframes pulse { 0%,80%,100% { opacity: .2; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+
+.incomingBtns {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.callBtn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 28px;
+  border-radius: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  transition: all .15s;
+}
+
+.callBtn span { font-size: 22px; }
+
+.decline {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.decline:hover { background: var(--red); color: #fff; }
+
+.accept {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.accept:hover { background: var(--green); color: #fff; }
+
+/* Audio controls */
+.audioWave {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  align-items: center;
+  height: 30px;
+  margin: 12px 0;
+}
+
+.audioWave span {
+  width: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: wave 1s ease-in-out infinite;
+}
+.audioWave span:nth-child(1) { height: 12px; }
+.audioWave span:nth-child(2) { height: 20px; animation-delay: .15s; }
+.audioWave span:nth-child(3) { height: 28px; animation-delay: .3s; }
+.audioWave span:nth-child(4) { height: 20px; animation-delay: .45s; }
+.audioWave span:nth-child(5) { height: 12px; animation-delay: .6s; }
+
+@keyframes wave { 0%,100% { transform: scaleY(.5); } 50% { transform: scaleY(1); } }
+
+.audioControls {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.callTimer {
+  font-size: 14px;
+  color: #fff;
+  font-weight: 600;
+  text-align: center;
+  padding: 6px 12px;
+  background: rgba(0,0,0,.4);
+  border-radius: 20px;
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.ctrlBtn {
+  width: 52px; height: 52px;
+  border-radius: 50%;
+  font-size: 20px;
+  background: rgba(255,255,255,0.1);
+  color: #fff;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .15s;
+}
+.ctrlBtn:hover { background: rgba(255,255,255,0.2); }
+.ctrlBtn.active { background: var(--accent); }
+.ctrlBtn.endBtn { background: var(--red); }
+.ctrlBtn.endBtn:hover { background: #dc2626; }
+
+/* Video call */
+.videoCall {
+  position: relative;
+  width: min(700px, 95vw);
+  height: min(500px, 85vh);
+  background: #000;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.remoteVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.waitingOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #111;
+}
+
+.localVideo {
+  position: absolute;
+  bottom: 80px;
+  right: 16px;
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid rgba(255,255,255,.3);
+}
+
+.videoControls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+}
