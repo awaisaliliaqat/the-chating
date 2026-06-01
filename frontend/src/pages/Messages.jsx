@@ -63,7 +63,7 @@ async function compressImage(file, maxKB=500) {
 }
 
 export default function Messages() {
-  const { user, setUser, api, onlineUsers, startCall } = useContext(AppContext)
+  const { user, setUser, api, onlineUsers, startCall, addToast } = useContext(AppContext)
   const { id: paramId } = useParams()
   const activePeerId = paramId ? parseInt(paramId) : null
   const navigate     = useNavigate()
@@ -262,33 +262,81 @@ export default function Messages() {
   }
 
   // ── Voice recording ────────────────────────────────────────────────────────
+
+  function getBestAudioMime() {
+    // Ordered by compatibility: mp4 works everywhere, webm works on Chrome/Firefox
+    const candidates = [
+      'audio/mp4',
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+    ]
+    for (const t of candidates) {
+      if (MediaRecorder.isTypeSupported(t)) return t
+    }
+    return ''
+  }
+
   async function startRecording() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({audio:true})
-      const mr = new MediaRecorder(stream)
-      const chunks = []
-      mr.ondataavailable = e => chunks.push(e.data)
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = getBestAudioMime()
+      const options  = mimeType ? { mimeType } : {}
+      const mr       = new MediaRecorder(stream, options)
+      const chunks   = []
+
+      mr.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data) }
+
       mr.onstop = () => {
-        const blob = new Blob(chunks,{type:'audio/webm'})
+        const usedMime = mr.mimeType || mimeType || 'audio/webm'
+        const blob     = new Blob(chunks, { type: usedMime })
+
+        // Limit to 5MB
+        if (blob.size > 5 * 1024 * 1024) {
+          addToast('Voice message too long (max ~2 min). Try again.', 'error')
+          stream.getTracks().forEach(t => t.stop())
+          setRecording(false)
+          return
+        }
+
         const reader = new FileReader()
         reader.onload = e2 => {
           const socket = getSocket()
           if (socket && activePeerId) {
-            socket.emit('send_message',{to:activePeerId, content:'🎤 Voice message', msg_type:'audio', file_b64: e2.target.result, file_name:'voice.webm', expires_in: disappear||null})
+            const ext = usedMime.includes('mp4') ? 'mp4' : usedMime.includes('ogg') ? 'ogg' : 'webm'
+            socket.emit('send_message', {
+              to: activePeerId,
+              content: '🎤 Voice message',
+              msg_type: 'audio',
+              file_b64: e2.target.result,
+              file_name: `voice.${ext}`,
+              expires_in: disappear || null
+            })
           }
         }
         reader.readAsDataURL(blob)
-        stream.getTracks().forEach(t=>t.stop())
+        stream.getTracks().forEach(t => t.stop())
         setRecording(false)
       }
-      mr.start()
+
+      mr.start(1000)   // collect data every second
       mediaRecRef.current = mr
       setRecording(true)
-    } catch { alert('Microphone access denied') }
+      addToast('Recording… tap 🎤 again to send', 'info')
+    } catch(err) {
+      if (err.name === 'NotAllowedError') {
+        addToast('Microphone permission denied. Allow it in browser settings.', 'error')
+      } else {
+        addToast('Could not start recording: ' + err.message, 'error')
+      }
+    }
   }
 
   function stopRecording() {
-    mediaRecRef.current?.stop()
+    if (mediaRecRef.current && mediaRecRef.current.state !== 'inactive') {
+      mediaRecRef.current.stop()
+    }
   }
 
   // ── Message context menu ───────────────────────────────────────────────────
@@ -395,7 +443,16 @@ export default function Messages() {
             </div>
           ) : m.msg_type==='audio' && m.file_b64 ? (
             <div className={`${s.audioBubble} ${isMe?s.audioMe:s.audioThem}`} onMouseEnter={e=>handleReactHover(e,m.id)}>
-              🎤 <audio src={m.file_b64} controls className={s.audioEl} />
+              <span>🎤</span>
+              <audio
+                controls
+                preload="metadata"
+                className={s.audioEl}
+                onError={e => console.warn('Audio error:', e)}
+              >
+                <source src={m.file_b64} />
+                Your browser does not support audio playback.
+              </audio>
             </div>
           ) : (
             <div className={`${s.bubble} ${isMe?s.bubbleMe:s.bubbleThem} ${m.is_pinned?s.pinned:''}`}
@@ -607,10 +664,12 @@ export default function Messages() {
             <div className={s.inputRow}>
               <button className={s.inputBtn} onClick={()=>setShowEmoji(p=>!p)} title="Emoji">😊</button>
               <button className={s.inputBtn} onClick={()=>fileRef.current?.click()} title="Image">📎</button>
-              <button className={`${s.inputBtn} ${recording?s.recActive:''}`}
-                onMouseDown={startRecording} onMouseUp={stopRecording} onTouchStart={startRecording} onTouchEnd={stopRecording}
-                title="Hold to record voice">
-                {recording ? '⏹' : '🎤'}
+              <button
+                className={`${s.inputBtn} ${recording ? s.recActive : ''}`}
+                onClick={recording ? stopRecording : startRecording}
+                title={recording ? 'Tap to STOP and send' : 'Tap to record voice message'}
+              >
+                {recording ? '⏹ Stop' : '🎤'}
               </button>
               <textarea
                 ref={inputRef}
