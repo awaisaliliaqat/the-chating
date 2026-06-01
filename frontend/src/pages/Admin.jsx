@@ -4,7 +4,7 @@ import { AppContext } from '../context/AppContext'
 import Avatar from '../components/Avatar'
 import s from './Admin.module.css'
 
-const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📢 Broadcast','📊 Stats']
+const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📋 Reports','📢 Broadcast','📊 Stats']
 
 const ADMIN_EMAILS = ['aariz123awais@gmail.com']
 const isAdmin = (email) => ADMIN_EMAILS.includes(email?.toLowerCase())
@@ -33,6 +33,8 @@ export default function Admin() {
   const navigate = useNavigate()
 
   const [tab,      setTab]      = useState('🚨 Flagged')
+  const [reports,      setReports]      = useState([])
+  const [reportsLoading, setReportsLoading] = useState(false)
 
   // Flagged tab state
   const [flags,       setFlags]       = useState([])
@@ -128,6 +130,32 @@ export default function Admin() {
       .catch(()=>{})
       .finally(()=>setMsgsLoading(false))
   }, [tab, msgsPage, msgsQ]) // eslint-disable-line
+
+  // Load reports
+  useEffect(() => {
+    if (tab !== '📋 Reports') return
+    setReportsLoading(true)
+    api('/admin/reports').then(r => setReports(r.data)).catch(()=>{}).finally(()=>setReportsLoading(false))
+  }, [tab]) // eslint-disable-line
+
+  async function warnUser(u) {
+    const reason = window.prompt(`Warn ${u.name} — enter reason:`)
+    if (!reason) return
+    await api(`/admin/users/${u.id}/warn`, { method:'POST', data:{ reason } })
+    addToast(`⚠️ Warning sent to ${u.name}`, 'success')
+  }
+
+  async function toggleVerify(u) {
+    const r = await api(`/admin/users/${u.id}/verify`, { method:'POST' })
+    setUsers(p => p.map(x => x.id===u.id ? {...x, is_verified:r.data.is_verified} : x))
+    addToast(r.data.is_verified ? `✓ ${u.name} is now verified` : `${u.name} unverified`, 'success')
+  }
+
+  async function resolveReport(rid) {
+    await api(`/admin/reports/${rid}/resolve`, { method:'POST' })
+    setReports(p => p.map(r => r.id===rid ? {...r, status:'resolved'} : r))
+    addToast('Report resolved', 'success')
+  }
 
   async function reviewFlag(fid) {
     await api(`/admin/flagged/${fid}/review`, { method:'POST' })
@@ -452,14 +480,18 @@ export default function Admin() {
                           <button className={s.detailBtn} onClick={()=>openDetail(u)} title="View details">👁</button>
                           {!isAdmin(u.email) && (
                             <>
+                              <button className={`${s.actionBtn2}`} style={{background:'rgba(245,158,11,.1)',color:'var(--yellow)'}} onClick={()=>warnUser(u)} title="Warn user">⚠️</button>
+                              <button className={`${s.actionBtn2}`} style={{background:u.is_verified?'var(--green-soft)':'var(--accent-soft)',color:u.is_verified?'var(--green)':'var(--accent)'}} onClick={()=>toggleVerify(u)} title={u.is_verified?'Remove verify':'Verify'}>
+                                {u.is_verified?'✓':'○'}
+                              </button>
                               {u.is_banned
-                                ? <button className={`${s.actionBtn2} ${s.unbanBtn}`} onClick={()=>handleUnban(u)} disabled={!!actionMap[u.id]} title="Unban">✅ Unban</button>
-                                : <button className={`${s.actionBtn2} ${s.banBtn}`}   onClick={()=>handleBan(u)}   title="Ban user">🚫 Ban</button>
+                                ? <button className={`${s.actionBtn2} ${s.unbanBtn}`} onClick={()=>handleUnban(u)} disabled={!!actionMap[u.id]}>✅</button>
+                                : <button className={`${s.actionBtn2} ${s.banBtn}`}   onClick={()=>handleBan(u)}>🚫</button>
                               }
                               {u.is_online_live && (
-                                <button className={`${s.actionBtn2} ${s.kickBtn}`} onClick={()=>handleKick(u)} disabled={!!actionMap[u.id]} title="Kick offline">⚡ Kick</button>
+                                <button className={`${s.actionBtn2} ${s.kickBtn}`} onClick={()=>handleKick(u)} disabled={!!actionMap[u.id]}>⚡</button>
                               )}
-                              <button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={()=>handleDeleteUser(u)} disabled={!!actionMap[u.id]} title="Delete user">🗑 Delete</button>
+                              <button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={()=>handleDeleteUser(u)} disabled={!!actionMap[u.id]}>🗑</button>
                             </>
                           )}
                         </div>
@@ -538,6 +570,42 @@ export default function Admin() {
                     </tr>
                   ))}
                   {msgs.length===0 && <tr><td colSpan={6} className={s.noData}>No messages found</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ REPORTS TAB ══ */}
+      {tab==='📋 Reports' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}>
+            <div className={s.tableTitle}>📋 User Reports <span className={s.totalBadge}>{reports.filter(r=>r.status==='pending').length} pending</span></div>
+          </div>
+          {reportsLoading ? <div className={s.loadingRow}><span className="spinner"/></div> : (
+            <div className={s.tableWrap}>
+              <table className={s.table}>
+                <thead><tr><th>Reporter</th><th>Reported</th><th>Reason</th><th>Date</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody>
+                  {reports.map(r => (
+                    <tr key={r.id}>
+                      <td><div className={s.miniUser}><div className={s.miniDot} style={{background:'#6366f1'}}/>{r.reporter_name}</div></td>
+                      <td><div className={s.miniUser}><div className={s.miniDot} style={{background:r.reported_color}}/>{r.reported_name}</div></td>
+                      <td className={s.msgCell}>{r.reason}</td>
+                      <td className={s.dateCell}>{new Date(r.created_at).toLocaleDateString()}</td>
+                      <td><span className={`${s.badge} ${r.status==='pending'?s.badgeRed:s.badgeGray}`}>{r.status}</span></td>
+                      <td>
+                        <div className={s.actionCell}>
+                          {r.status==='pending' && <>
+                            <button className={`${s.actionBtn2} ${s.banBtn}`} onClick={()=>handleBan({id:r.reported_id,name:r.reported_name,email:r.reported_email,avatar_color:r.reported_color})}>🚫 Ban</button>
+                            <button className={`${s.actionBtn2} ${s.reviewBtn}`} onClick={()=>resolveReport(r.id)}>✓ Resolve</button>
+                          </>}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {reports.length===0 && <tr><td colSpan={6} className={s.noData}>No reports yet</td></tr>}
                 </tbody>
               </table>
             </div>

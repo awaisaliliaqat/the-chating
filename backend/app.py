@@ -213,6 +213,14 @@ def login():
     if user["is_banned"]:
         reason = user["ban_reason"] or "No reason provided."
         return jsonify({"message": f"Your account has been banned. Reason: {reason}"}),403
+    # Record login history
+    try:
+        ip = request.headers.get("X-Real-IP") or request.remote_addr or ""
+        ua = request.headers.get("User-Agent","")[:200]
+        db2 = get_db()
+        db2.execute("INSERT INTO login_history (user_id,ip,user_agent) VALUES (?,?,?)",(user["id"],ip,ua))
+        db2.commit(); db2.close()
+    except Exception: pass
     return jsonify({"token": make_token(user["id"]), "message":"Logged in!"}),200
 
 @app.route("/api/me", methods=["GET"])
@@ -1472,6 +1480,553 @@ def admin_online():
     rows = db.execute(f"SELECT * FROM users WHERE id IN ({placeholders})", online_ids).fetchall()
     db.close()
     return jsonify([user_dict(r) for r in rows]), 200
+
+# ── Starred Messages ─────────────────────────────────────────────────────────
+
+@app.route("/api/messages/<int:mid>/star", methods=["PUT"])
+def star_message(mid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    m = db.execute("SELECT * FROM messages WHERE id=? AND (sender_id=? OR receiver_id=?)",(mid,uid,uid)).fetchone()
+    if not m: db.close(); return jsonify({"message":"Not found"}),404
+    new_val = 0 if m["is_starred"] else 1
+    db.execute("UPDATE messages SET is_starred=? WHERE id=?",(new_val,mid))
+    db.commit(); db.close()
+    return jsonify({"is_starred":bool(new_val)}),200
+
+@app.route("/api/messages/starred", methods=["GET"])
+def get_starred():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT m.*, u.name as sender_name FROM messages m
+        JOIN users u ON m.sender_id=u.id
+        WHERE (m.sender_id=? OR m.receiver_id=?) AND m.is_starred=1 AND m.deleted_at IS NULL
+        ORDER BY m.created_at DESC LIMIT 100
+    ''',(uid,uid)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+# ── Pinned / Archived Conversations ──────────────────────────────────────────
+
+def _get_or_create_conv_settings(db, user_id, peer_id):
+    s = db.execute("SELECT * FROM conversation_settings WHERE user_id=? AND peer_id=?",(user_id,peer_id)).fetchone()
+    if not s:
+        db.execute("INSERT OR IGNORE INTO conversation_settings (user_id,peer_id) VALUES (?,?)",(user_id,peer_id))
+        db.commit()
+        s = db.execute("SELECT * FROM conversation_settings WHERE user_id=? AND peer_id=?",(user_id,peer_id)).fetchone()
+    return s
+
+@app.route("/api/conversations/<int:peer_id>/pin", methods=["PUT"])
+def pin_conversation(peer_id):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    s = _get_or_create_conv_settings(db, uid, peer_id)
+    new_val = 0 if s["is_pinned"] else 1
+    db.execute("UPDATE conversation_settings SET is_pinned=? WHERE user_id=? AND peer_id=?",(new_val,uid,peer_id))
+    db.commit(); db.close()
+    return jsonify({"is_pinned":bool(new_val)}),200
+
+@app.route("/api/conversations/<int:peer_id>/archive", methods=["PUT"])
+def archive_conversation(peer_id):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    s = _get_or_create_conv_settings(db, uid, peer_id)
+    new_val = 0 if s["is_archived"] else 1
+    db.execute("UPDATE conversation_settings SET is_archived=? WHERE user_id=? AND peer_id=?",(new_val,uid,peer_id))
+    db.commit(); db.close()
+    return jsonify({"is_archived":bool(new_val)}),200
+
+@app.route("/api/conversations/<int:peer_id>/mute", methods=["PUT"])
+def mute_conversation(peer_id):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    s = _get_or_create_conv_settings(db, uid, peer_id)
+    new_val = 0 if s["is_muted"] else 1
+    db.execute("UPDATE conversation_settings SET is_muted=? WHERE user_id=? AND peer_id=?",(new_val,uid,peer_id))
+    db.commit(); db.close()
+    return jsonify({"is_muted":bool(new_val)}),200
+
+@app.route("/api/conversations/<int:peer_id>/wallpaper", methods=["PUT"])
+def set_wallpaper(peer_id):
+    uid, err = require_auth()
+    if err: return err
+    wallpaper = (request.json or {}).get("wallpaper","")
+    db = get_db()
+    _get_or_create_conv_settings(db, uid, peer_id)
+    db.execute("UPDATE conversation_settings SET wallpaper=? WHERE user_id=? AND peer_id=?",(wallpaper,uid,peer_id))
+    db.commit(); db.close()
+    return jsonify({"message":"Wallpaper updated."}),200
+
+# ── Message Forwarding ────────────────────────────────────────────────────────
+
+@app.route("/api/messages/<int:mid>/forward", methods=["POST"])
+def forward_message(mid):
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    targets = d.get("to",[])   # list of user_ids or group_ids
+    target_type = d.get("type","dm")  # "dm" or "group"
+    db = get_db()
+    orig = db.execute("SELECT * FROM messages WHERE id=?",(mid,)).fetchone()
+    if not orig: db.close(); return jsonify({"message":"Not found"}),404
+    now = datetime.datetime.utcnow().isoformat()
+    count = 0
+    for t in targets:
+        if target_type == "dm":
+            db.execute("INSERT INTO messages (sender_id,receiver_id,content,msg_type,file_b64,file_name,forward_from_id,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                       (uid,t,orig["content"],orig["msg_type"],orig["file_b64"],orig["file_name"],mid,now))
+            mid2 = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+            msg = dict(db.execute("SELECT * FROM messages WHERE id=?",(mid2,)).fetchone())
+            emit_safe = lambda: socketio.emit("new_message",msg,to=f"user_{t}")
+        else:
+            db.execute("INSERT INTO group_messages (group_id,sender_id,content,msg_type,file_b64,file_name,forward_from_id,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                       (t,uid,orig["content"],orig["msg_type"],orig["file_b64"],orig["file_name"],mid,now))
+        count += 1
+    db.commit(); db.close()
+    return jsonify({"message":f"Forwarded to {count} chats."}),200
+
+# ── Polls ─────────────────────────────────────────────────────────────────────
+
+@app.route("/api/polls", methods=["POST"])
+def create_poll():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    question = (d.get("question") or "").strip()
+    options  = d.get("options",[])
+    if not question or len(options) < 2:
+        return jsonify({"message":"Question and at least 2 options required."}),400
+    db = get_db()
+    db.execute("INSERT INTO polls (creator_id,chat_id,group_id,question,options,is_multi) VALUES (?,?,?,?,?,?)",
+               (uid, d.get("chat_id"), d.get("group_id"), question, json.dumps(options), int(d.get("is_multi",0))))
+    db.commit()
+    pid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    poll = dict(db.execute("SELECT * FROM polls WHERE id=?",(pid,)).fetchone())
+    poll["options"] = json.loads(poll["options"])
+    poll["votes"]   = {}
+    db.close()
+    return jsonify(poll),201
+
+@app.route("/api/polls/<int:pid>", methods=["GET"])
+def get_poll(pid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    poll = db.execute("SELECT * FROM polls WHERE id=?",(pid,)).fetchone()
+    if not poll: db.close(); return jsonify({"message":"Not found"}),404
+    votes = db.execute("SELECT option_idx, COUNT(*) as c, GROUP_CONCAT(user_id) as uids FROM poll_votes WHERE poll_id=? GROUP BY option_idx",(pid,)).fetchall()
+    my_votes = [v["option_idx"] for v in db.execute("SELECT option_idx FROM poll_votes WHERE poll_id=? AND user_id=?",(pid,uid)).fetchall()]
+    db.close()
+    d = dict(poll)
+    d["options"] = json.loads(d["options"])
+    d["vote_counts"] = {v["option_idx"]: v["c"] for v in votes}
+    d["my_votes"] = my_votes
+    d["total_votes"] = sum(d["vote_counts"].values())
+    return jsonify(d),200
+
+@app.route("/api/polls/<int:pid>/vote", methods=["POST"])
+def vote_poll(pid):
+    uid, err = require_auth()
+    if err: return err
+    option = (request.json or {}).get("option_idx")
+    if option is None: return jsonify({"message":"option_idx required"}),400
+    db = get_db()
+    poll = db.execute("SELECT * FROM polls WHERE id=?",(pid,)).fetchone()
+    if not poll or poll["is_closed"]: db.close(); return jsonify({"message":"Poll closed."}),400
+    try:
+        db.execute("INSERT INTO poll_votes (poll_id,user_id,option_idx) VALUES (?,?,?)",(pid,uid,option))
+        db.commit()
+    except:
+        db.execute("DELETE FROM poll_votes WHERE poll_id=? AND user_id=? AND option_idx=?",(pid,uid,option))
+        db.commit()
+    db.close()
+    return get_poll(pid)
+
+# ── User Status ───────────────────────────────────────────────────────────────
+
+@app.route("/api/users/status", methods=["PUT"])
+def set_status():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    db.execute("UPDATE users SET status_text=?,status_emoji=? WHERE id=?",
+               (d.get("text","")[:50], d.get("emoji",""), uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Status updated."}),200
+
+# ── User Reports ──────────────────────────────────────────────────────────────
+
+@app.route("/api/users/<int:tid>/report", methods=["POST"])
+def report_user(tid):
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    reason = (d.get("reason") or "").strip()
+    if not reason: return jsonify({"message":"Reason required."}),400
+    db = get_db()
+    db.execute("INSERT INTO reports (reporter_id,reported_id,reason,message_id) VALUES (?,?,?,?)",
+               (uid, tid, reason, d.get("message_id")))
+    db.commit()
+    # Notify admins
+    rep = db.execute("SELECT * FROM users WHERE id=?",(tid,)).fetchone()
+    reporter = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    db.close()
+    notify_admins("user_reported", {"reporter":user_dict(reporter),"reported":user_dict(rep),"reason":reason})
+    return jsonify({"message":"Report submitted. Admin will review it."}),201
+
+# ── Group Invite Links ────────────────────────────────────────────────────────
+
+@app.route("/api/groups/<int:gid>/invite", methods=["POST"])
+def create_invite(gid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    mem = db.execute("SELECT role FROM group_members WHERE group_id=? AND user_id=?",(gid,uid)).fetchone()
+    if not mem: db.close(); return jsonify({"message":"Not a member."}),403
+    d = request.json or {}
+    import secrets
+    code = secrets.token_urlsafe(8)
+    expires = None
+    if d.get("expires_hours"):
+        expires = (datetime.datetime.utcnow() + datetime.timedelta(hours=int(d["expires_hours"]))).isoformat()
+    db.execute("INSERT INTO group_invites (group_id,code,created_by,max_uses,expires_at) VALUES (?,?,?,?,?)",
+               (gid, code, uid, d.get("max_uses",0), expires))
+    db.commit(); db.close()
+    invite_url = f"https://the-chating.trading-ai.bot/join/{code}"
+    return jsonify({"code":code,"url":invite_url}),201
+
+@app.route("/api/groups/join/<code>", methods=["POST"])
+def join_via_invite(code):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    invite = db.execute("SELECT * FROM group_invites WHERE code=?",(code,)).fetchone()
+    if not invite: db.close(); return jsonify({"message":"Invalid invite link."}),404
+    now = datetime.datetime.utcnow().isoformat()
+    if invite["expires_at"] and invite["expires_at"] < now:
+        db.close(); return jsonify({"message":"Invite link expired."}),410
+    if invite["max_uses"] and invite["use_count"] >= invite["max_uses"]:
+        db.close(); return jsonify({"message":"Invite link used up."}),410
+    gid = invite["group_id"]
+    try:
+        db.execute("INSERT INTO group_members (group_id,user_id) VALUES (?,?)",(gid,uid))
+        db.execute("UPDATE group_invites SET use_count=use_count+1 WHERE code=?",(code,))
+        db.commit()
+    except: pass
+    group = db.execute("SELECT * FROM groups WHERE id=?",(gid,)).fetchone()
+    db.close()
+    return jsonify({"message":"Joined!","group":dict(group)}),200
+
+# ── Verified Badge ────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/users/<int:tid>/verify", methods=["POST"])
+def toggle_verified(tid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    user = db.execute("SELECT is_verified FROM users WHERE id=?",(tid,)).fetchone()
+    if not user: db.close(); return jsonify({"message":"Not found"}),404
+    new_val = 0 if user["is_verified"] else 1
+    db.execute("UPDATE users SET is_verified=? WHERE id=?",(new_val,tid))
+    db.commit(); db.close()
+    return jsonify({"is_verified":bool(new_val)}),200
+
+# ── User Warnings ─────────────────────────────────────────────────────────────
+
+@app.route("/api/admin/users/<int:tid>/warn", methods=["POST"])
+def warn_user(tid):
+    uid, err = require_admin()
+    if err: return err
+    reason = (request.json or {}).get("reason","No reason given.")
+    db = get_db()
+    db.execute("INSERT INTO user_warnings (user_id,admin_id,reason) VALUES (?,?,?)",(tid,uid,reason))
+    db.commit()
+    user = db.execute("SELECT * FROM users WHERE id=?",(tid,)).fetchone()
+    db.close()
+    # Notify the user via socket
+    if tid in user_sockets:
+        socketio.emit("warning_received",{"reason":reason},to=f"user_{tid}")
+    return jsonify({"message":"Warning sent."}),200
+
+@app.route("/api/admin/users/<int:tid>/warnings", methods=["GET"])
+def get_warnings(tid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute("SELECT w.*, a.name as admin_name FROM user_warnings w JOIN users a ON w.admin_id=a.id WHERE w.user_id=? ORDER BY w.created_at DESC",(tid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/admin/reports", methods=["GET"])
+def admin_reports():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT r.*, a.name as reporter_name, b.name as reported_name, b.email as reported_email, b.avatar_color as reported_color
+        FROM reports r JOIN users a ON r.reporter_id=a.id JOIN users b ON r.reported_id=b.id
+        ORDER BY r.created_at DESC LIMIT 100
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/admin/reports/<int:rid>/resolve", methods=["POST"])
+def resolve_report(rid):
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE reports SET status='resolved', resolved_at=? WHERE id=?",(datetime.datetime.utcnow().isoformat(),rid))
+    db.commit(); db.close()
+    return jsonify({"message":"Resolved."}),200
+
+# ── 2FA ───────────────────────────────────────────────────────────────────────
+
+@app.route("/api/2fa/setup", methods=["GET"])
+def twofa_setup():
+    uid, err = require_auth()
+    if err: return err
+    try:
+        import pyotp
+        db = get_db()
+        user = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+        secret = user["twofa_secret"] or pyotp.random_base32()
+        if not user["twofa_secret"]:
+            db.execute("UPDATE users SET twofa_secret=? WHERE id=?",(secret,uid))
+            db.commit()
+        uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user["email"],issuer_name="THE CHATING")
+        db.close()
+        return jsonify({"secret":secret,"uri":uri}),200
+    except ImportError:
+        return jsonify({"message":"2FA not available (pyotp not installed)"}),501
+
+@app.route("/api/2fa/enable", methods=["POST"])
+def twofa_enable():
+    uid, err = require_auth()
+    if err: return err
+    try:
+        import pyotp
+        code = (request.json or {}).get("code","")
+        db = get_db()
+        user = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+        if not user["twofa_secret"]: db.close(); return jsonify({"message":"Run setup first."}),400
+        totp = pyotp.TOTP(user["twofa_secret"])
+        if not totp.verify(code): db.close(); return jsonify({"message":"Invalid code."}),400
+        db.execute("UPDATE users SET twofa_enabled=1 WHERE id=?",(uid,))
+        db.commit(); db.close()
+        return jsonify({"message":"2FA enabled!"}),200
+    except ImportError:
+        return jsonify({"message":"2FA not available"}),501
+
+@app.route("/api/2fa/disable", methods=["POST"])
+def twofa_disable():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE users SET twofa_enabled=0, twofa_secret=NULL WHERE id=?",(uid,))
+    db.commit(); db.close()
+    return jsonify({"message":"2FA disabled."}),200
+
+# ── Login History ─────────────────────────────────────────────────────────────
+
+@app.route("/api/login-history", methods=["GET"])
+def login_history():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute("SELECT * FROM login_history WHERE user_id=? ORDER BY created_at DESC LIMIT 20",(uid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+# ── Privacy Settings ──────────────────────────────────────────────────────────
+
+@app.route("/api/users/privacy", methods=["PUT"])
+def update_privacy():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    privacy = d.get("last_seen_privacy","everyone")
+    if privacy not in ("everyone","friends","nobody"): privacy = "everyone"
+    db.execute("UPDATE users SET last_seen_privacy=? WHERE id=?",(privacy,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Privacy updated."}),200
+
+# ── App Lock ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/users/app-lock", methods=["PUT"])
+def set_app_lock():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    pin = d.get("pin")  # None = remove lock
+    db = get_db()
+    if pin:
+        hashed = bcrypt.hashpw(str(pin).encode(), bcrypt.gensalt()).decode()
+        db.execute("UPDATE users SET app_lock_pin=? WHERE id=?",(hashed,uid))
+    else:
+        db.execute("UPDATE users SET app_lock_pin=NULL WHERE id=?",(uid,))
+    db.commit(); db.close()
+    return jsonify({"message":"App lock updated."}),200
+
+@app.route("/api/users/app-lock/verify", methods=["POST"])
+def verify_app_lock():
+    uid, err = require_auth()
+    if err: return err
+    pin = str((request.json or {}).get("pin",""))
+    db = get_db()
+    user = db.execute("SELECT app_lock_pin FROM users WHERE id=?",(uid,)).fetchone()
+    db.close()
+    if not user["app_lock_pin"]: return jsonify({"valid":True}),200
+    valid = bcrypt.checkpw(pin.encode(), user["app_lock_pin"].encode())
+    return jsonify({"valid":valid}),200
+
+# ── Announcement Groups ───────────────────────────────────────────────────────
+
+@app.route("/api/groups/<int:gid>/announce", methods=["PUT"])
+def toggle_announce(gid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    g = db.execute("SELECT * FROM groups WHERE id=? AND owner_id=?",(gid,uid)).fetchone()
+    if not g: db.close(); return jsonify({"message":"Not authorized"}),403
+    new_val = 0 if g["is_announce"] else 1
+    db.execute("UPDATE groups SET is_announce=? WHERE id=?",(new_val,gid))
+    db.commit(); db.close()
+    socketio.emit("group_updated",{"group_id":gid,"is_announce":bool(new_val)},to=f"group_{gid}")
+    return jsonify({"is_announce":bool(new_val)}),200
+
+# ── Scheduled Messages ────────────────────────────────────────────────────────
+
+@app.route("/api/messages/scheduled", methods=["POST"])
+def schedule_message():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    send_at = d.get("send_at")
+    content = (d.get("content") or "").strip()
+    if not send_at or not content: return jsonify({"message":"content and send_at required"}),400
+    db = get_db()
+    db.execute("INSERT INTO scheduled_messages (sender_id,receiver_id,group_id,content,msg_type,send_at) VALUES (?,?,?,?,?,?)",
+               (uid, d.get("receiver_id"), d.get("group_id"), content, d.get("msg_type","text"), send_at))
+    db.commit()
+    mid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    row = dict(db.execute("SELECT * FROM scheduled_messages WHERE id=?",(mid,)).fetchone())
+    db.close()
+    return jsonify(row),201
+
+@app.route("/api/messages/scheduled", methods=["GET"])
+def get_scheduled():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute("SELECT * FROM scheduled_messages WHERE sender_id=? AND sent=0 ORDER BY send_at ASC",(uid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/messages/scheduled/<int:sid>", methods=["DELETE"])
+def cancel_scheduled(sid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("DELETE FROM scheduled_messages WHERE id=? AND sender_id=?",(sid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Cancelled."}),200
+
+# ── GIF Search (Tenor) ────────────────────────────────────────────────────────
+
+@app.route("/api/gif/search", methods=["GET"])
+def gif_search():
+    uid, err = require_auth()
+    if err: return err
+    import requests as req
+    q = request.args.get("q","funny")
+    limit = min(int(request.args.get("limit",20)),50)
+    api_key = os.getenv("TENOR_API_KEY","LIVDSRZULELA")  # default free key
+    try:
+        r = req.get(f"https://tenor.googleapis.com/v2/search?q={q}&key={api_key}&limit={limit}&media_filter=gif")
+        data = r.json()
+        gifs = [{"id":g["id"],"url":g["media_formats"]["gif"]["url"],"preview":g["media_formats"]["tinygif"]["url"],"title":g.get("title","")} for g in data.get("results",[])]
+        return jsonify(gifs),200
+    except Exception as e:
+        return jsonify({"message":str(e),"gifs":[]}),200
+
+# ── QR Code ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/users/<int:tid>/qr", methods=["GET"])
+def user_qr(tid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    user = db.execute("SELECT username,email,name FROM users WHERE id=?",(tid,)).fetchone()
+    db.close()
+    if not user: return jsonify({"message":"Not found"}),404
+    identifier = user["username"] or user["email"]
+    qr_data = f"https://the-chating.trading-ai.bot/profile/{tid}"
+    qr_url  = f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={qr_data}&bgcolor=0d0f1a&color=6366f1"
+    return jsonify({"qr_url":qr_url,"profile_url":qr_data}),200
+
+# ── Announcement to admin route (already handled in notify_admins) ─────────────────────────────────────────────────────
+
+@app.route("/api/admin/analytics/detailed", methods=["GET"])
+def admin_analytics():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    now = datetime.datetime.utcnow()
+    days = int(request.args.get("days",30))
+
+    # Signups per day
+    signups_chart = []
+    for i in range(days-1,-1,-1):
+        day_start = (now - datetime.timedelta(days=i)).replace(hour=0,minute=0,second=0).isoformat()
+        day_end   = (now - datetime.timedelta(days=i-1)).replace(hour=0,minute=0,second=0).isoformat() if i > 0 else now.isoformat()
+        count = db.execute("SELECT COUNT(*) as c FROM users WHERE created_at>=? AND created_at<?", (day_start,day_end)).fetchone()["c"]
+        msgs  = db.execute("SELECT COUNT(*) as c FROM messages WHERE created_at>=? AND created_at<?", (day_start,day_end)).fetchone()["c"]
+        signups_chart.append({"day":(now-datetime.timedelta(days=i)).strftime("%b %d"),"signups":count,"messages":msgs})
+
+    # Top users by messages
+    top_users = db.execute('''
+        SELECT u.name, u.email, u.avatar_color, COUNT(*) as msg_count
+        FROM messages m JOIN users u ON m.sender_id=u.id
+        WHERE m.deleted_at IS NULL GROUP BY m.sender_id ORDER BY msg_count DESC LIMIT 10
+    ''').fetchall()
+
+    # Top groups
+    top_groups = db.execute('''
+        SELECT g.name, g.avatar_color, COUNT(*) as msg_count, COUNT(DISTINCT gm.user_id) as members
+        FROM group_messages gm JOIN groups g ON gm.group_id=g.id
+        WHERE gm.deleted_at IS NULL GROUP BY gm.group_id ORDER BY msg_count DESC LIMIT 5
+    ''').fetchall()
+
+    total_banned = db.execute("SELECT COUNT(*) as c FROM users WHERE is_banned=1").fetchone()["c"]
+    total_reports = db.execute("SELECT COUNT(*) as c FROM reports WHERE status='pending'").fetchone()["c"]
+    total_polls   = db.execute("SELECT COUNT(*) as c FROM polls").fetchone()["c"]
+
+    db.close()
+    return jsonify({
+        "chart":signups_chart,
+        "top_users":[dict(r) for r in top_users],
+        "top_groups":[dict(r) for r in top_groups],
+        "total_banned":total_banned,
+        "pending_reports":total_reports,
+        "total_polls":total_polls,
+    }),200
+
+# ── Socket: warning received ──────────────────────────────────────────────────
+
+@socketio.on("join_invite")
+def on_join_invite(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    code = data.get("code","")
+    # Join via socket call handled via HTTP endpoint
 
 if __name__ == "__main__":
     port  = int(os.getenv("PORT",5001))

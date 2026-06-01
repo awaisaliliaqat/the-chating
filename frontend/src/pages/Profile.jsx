@@ -58,6 +58,11 @@ export default function Profile() {
     ? new Date(user.created_at).toLocaleDateString([], { year:'numeric', month:'long' })
     : ''
 
+  // Show status
+  const statusLine = user?.status_emoji || user?.status_text
+    ? `${user.status_emoji || ''} ${user.status_text || ''}`.trim()
+    : null
+
   return (
     <div className={s.page}>
       {/* Profile header */}
@@ -69,9 +74,14 @@ export default function Profile() {
           </label>
         </div>
         <div className={s.heroInfo}>
-          <div className={s.heroName}>{user?.name}</div>
+          <div className={s.heroName}>
+            {user?.name}
+            {user?.is_verified && <span style={{color:'#3b82f6',fontSize:16,marginLeft:4}} title="Verified">✓</span>}
+          </div>
           {user?.username && <div style={{fontSize:13,color:'var(--accent)',fontWeight:600}}>@{user.username}</div>}
+          {statusLine && <div style={{fontSize:13,color:'var(--text-secondary)',marginTop:2}}>{statusLine}</div>}
           <div className={s.heroEmail}>{user?.email}</div>
+          {user?.bio_link && <a href={user.bio_link} target="_blank" rel="noreferrer" style={{fontSize:12,color:'var(--accent)'}}>{user.bio_link}</a>}
           <div className={s.heroMeta}>
             <span>👥 {user?.friends_count || 0} friends</span>
             <span>📅 Joined {memberSince}</span>

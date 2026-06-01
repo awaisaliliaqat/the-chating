@@ -1,0 +1,14 @@
+.card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:14px;padding:14px;min-width:220px;max-width:320px}
+.header{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px}
+.icon{font-size:22px;flex-shrink:0}
+.question{font-size:14px;font-weight:700;color:var(--text-primary);line-height:1.4}
+.meta{font-size:11px;color:var(--text-muted);margin-top:2px}
+.options{display:flex;flex-direction:column;gap:6px}
+.option{position:relative;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:left;display:flex;align-items:center;gap:8px;overflow:hidden;transition:border-color .15s}
+.option:hover:not(:disabled){border-color:var(--accent)}
+.option:disabled{cursor:not-allowed;opacity:.7}
+.voted{border-color:var(--accent)!important;background:var(--accent-soft)!important}
+.optionBar{position:absolute;top:0;left:0;height:100%;background:rgba(99,102,241,.1);transition:width .4s ease;z-index:0;border-radius:10px}
+.optionText{position:relative;z-index:1;flex:1;font-size:13px;color:var(--text-primary);font-weight:500}
+.optionPct{position:relative;z-index:1;font-size:11px;font-weight:700;color:var(--text-muted)}
+.check{position:relative;z-index:1;color:var(--accent);font-size:13px;font-weight:700}

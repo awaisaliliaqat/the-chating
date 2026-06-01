@@ -4,6 +4,8 @@ import { AppContext } from '../context/AppContext'
 import { getSocket } from '../utils/socket'
 import Avatar from '../components/Avatar'
 import EmojiPicker, { QuickReact } from '../components/EmojiPicker'
+import GifPicker from '../components/GifPicker'
+import PollCard  from '../components/PollCard'
 import s from './Messages.module.css'
 
 function timeAgo(dt) {
@@ -83,6 +85,10 @@ export default function Messages() {
   const [menuMsg,    setMenuMsg]    = useState(null)   // right-click context menu target
   const [menuPos,    setMenuPos]    = useState({x:0,y:0})
   const [showEmoji,  setShowEmoji]  = useState(false)
+  const [showGif,    setShowGif]    = useState(false)
+  const [showPoll,   setShowPoll]   = useState(false)
+  const [pollQ,      setPollQ]      = useState('')
+  const [pollOpts,   setPollOpts]   = useState(['',''])
   const [reactTarget,setReactTarget]= useState(null)  // message id for quick react
   const [reactPos,   setReactPos]   = useState({x:0,y:0})
   const [imgPreview, setImgPreview] = useState(null)  // base64 for image preview before send
@@ -442,6 +448,8 @@ export default function Messages() {
               <img src={m.file_b64} className={s.imgBubble} alt="" onClick={()=>window.open(m.file_b64)} />
               {m.edited_at && <span className={s.editedTag}>edited</span>}
             </div>
+          ) : m.msg_type==='poll' && m.poll_id ? (
+            <PollCard poll={{id:m.poll_id,...(m.poll||{})}} />
           ) : m.msg_type==='audio' && m.file_b64 ? (
             <div className={`${s.audioBubble} ${isMe?s.audioMe:s.audioThem}`} onMouseEnter={e=>handleReactHover(e,m.id)}>
               <span>🎤</span>
@@ -659,12 +667,53 @@ export default function Messages() {
             </div>
           )}
 
+          {/* GIF Picker */}
+          {showGif && (
+            <div style={{padding:'8px 16px',borderTop:'1px solid var(--border)'}}>
+              <GifPicker
+                onPick={url => {
+                  const socket = getSocket()
+                  if (socket && activePeerId) socket.emit('send_message',{to:activePeerId,content:'',msg_type:'image',file_b64:url,file_name:'gif'})
+                  setShowGif(false)
+                }}
+                onClose={() => setShowGif(false)}
+              />
+            </div>
+          )}
+
+          {/* Poll Creator */}
+          {showPoll && (
+            <div style={{padding:'12px 16px',borderTop:'1px solid var(--border)',background:'var(--bg-secondary)'}}>
+              <div style={{fontWeight:700,marginBottom:8,fontSize:13}}>📊 Create Poll</div>
+              <input style={{width:'100%',padding:'7px',borderRadius:8,border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-primary)',marginBottom:6,fontSize:13}} placeholder="Question" value={pollQ} onChange={e=>setPollQ(e.target.value)} />
+              {pollOpts.map((opt,i) => (
+                <div key={i} style={{display:'flex',gap:4,marginBottom:4}}>
+                  <input style={{flex:1,padding:'6px',borderRadius:8,border:'1px solid var(--border)',background:'var(--bg-card)',color:'var(--text-primary)',fontSize:13}} placeholder={`Option ${i+1}`} value={opt} onChange={e=>{const o=[...pollOpts];o[i]=e.target.value;setPollOpts(o)}} />
+                  {i>=2&&<button onClick={()=>setPollOpts(p=>p.filter((_,j)=>j!==i))} style={{background:'none',border:'none',color:'var(--red)',fontSize:16}}>✕</button>}
+                </div>
+              ))}
+              <div style={{display:'flex',gap:8,marginTop:6}}>
+                {pollOpts.length<5&&<button style={{background:'var(--bg-card)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',fontSize:12,color:'var(--text-secondary)'}} onClick={()=>setPollOpts(p=>[...p,''])}>+ Add option</button>}
+                <button style={{background:'var(--accent)',color:'#fff',border:'none',borderRadius:8,padding:'6px 14px',fontSize:13,fontWeight:700}} onClick={async()=>{
+                  if(!pollQ||pollOpts.filter(o=>o.trim()).length<2)return
+                  const r=await api('/polls',{method:'POST',data:{question:pollQ,options:pollOpts.filter(o=>o.trim()),chat_id:activePeerId}})
+                  const socket=getSocket()
+                  if(socket&&activePeerId) socket.emit('send_message',{to:activePeerId,content:`📊 Poll: ${pollQ}`,msg_type:'poll',poll_id:r.data.id})
+                  setShowPoll(false);setPollQ('');setPollOpts(['',''])
+                }}>Send Poll</button>
+                <button style={{background:'none',border:'none',color:'var(--text-muted)',fontSize:13}} onClick={()=>setShowPoll(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
           {/* Input area */}
           <div className={s.inputArea}>
             <input ref={fileRef} type="file" accept="image/*,video/*" style={{display:'none'}} onChange={handleFilePick} />
             <div className={s.inputRow}>
               <button className={s.inputBtn} onClick={()=>setShowEmoji(p=>!p)} title="Emoji">😊</button>
-              <button className={s.inputBtn} onClick={()=>fileRef.current?.click()} title="Image">📎</button>
+              <button className={s.inputBtn} onClick={()=>{setShowGif(p=>!p);setShowEmoji(false)}} title="GIF">GIF</button>
+              <button className={s.inputBtn} onClick={()=>{setShowPoll(p=>!p);setShowGif(false)}} title="Poll">📊</button>
+              <button className={s.inputBtn} onClick={()=>fileRef.current?.click()} title="Image/File">📎</button>
               <button
                 className={`${s.inputBtn} ${recording ? s.recActive : ''}`}
                 onClick={recording ? stopRecording : startRecording}

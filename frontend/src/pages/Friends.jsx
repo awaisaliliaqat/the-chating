@@ -7,6 +7,7 @@ import s from './Friends.module.css'
 
 export default function Friends() {
   const { api, onlineUsers, startCall, user, setUser, addToast } = useContext(AppContext)
+  // Expose reportUser to FriendBtn via closure
   const navigate = useNavigate()
 
   const [tab,       setTab]       = useState('find')   // find | friends | requests
@@ -155,6 +156,13 @@ export default function Friends() {
   )
 
   const pendingCount = requests.incoming.length
+
+  async function reportUser(u) {
+    const reason = window.prompt(`Report ${u.name} — what is the reason?`)
+    if (!reason) return
+    await api(`/users/${u.id}/report`, { method:'POST', data:{ reason } })
+    addToast('Report submitted to admin', 'success')
+  }
 
   // ── Action button for a user card ─────────────────────────────────────────
   function ActionBtn({ u }) {
