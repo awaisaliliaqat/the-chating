@@ -17,7 +17,7 @@ self.addEventListener('push', e => {
     badge:   '/favicon.ico',
     tag:     payload.data?.type || 'notification',
     data:    payload.data  || {},
-    vibrate: [200, 100, 200, 100, 200],  // ring pattern
+    vibrate: [400,150,400,150,400,150,400,150,400,150,400,150,400,150,400],  // strong ring: trtrtrtrtrtrtrt
     actions: payload.data?.type === 'incoming_call' ? [
       { action: 'open', title: '📞 Open App' },
     ] : [],

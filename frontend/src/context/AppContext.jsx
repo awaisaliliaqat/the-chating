@@ -98,27 +98,8 @@ export function AppProvider({ children }) {
         from: d.from, callId: d.call_id, offer: d.offer,
         callType: d.call_type, callerName: d.caller_name, callerColor: d.caller_color,
       })
-      // Play ring sound (works on all browsers including iOS Safari)
-      try {
-        const AC = window.AudioContext || window.webkitAudioContext
-        if (AC) {
-          const ctx = new AC()
-          const playBeep = (freq, start, dur) => {
-            const osc = ctx.createOscillator()
-            const g   = ctx.createGain()
-            osc.connect(g); g.connect(ctx.destination)
-            osc.frequency.value = freq
-            g.gain.setValueAtTime(0.4, ctx.currentTime + start)
-            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
-            osc.start(ctx.currentTime + start)
-            osc.stop(ctx.currentTime + start + dur)
-          }
-          for (let i = 0; i < 3; i++) {
-            playBeep(880, i * 0.8, 0.4)
-            playBeep(660, i * 0.8 + 0.1, 0.3)
-          }
-        }
-      } catch { /* ignore audio errors */ }
+      // Start ringing — keeps going until answered/declined
+      startRing()
       // Push notification
       try {
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -144,8 +125,8 @@ export function AppProvider({ children }) {
       } catch(e) { console.error('call_answered error:', e) }
     })
 
-    s.on('call_declined', () => { cleanupCall(); addToast('Call was declined', 'info') })
-    s.on('call_ended',    () => { cleanupCall(); addToast('Call ended',        'info') })
+    s.on('call_declined', () => { stopRing(); cleanupCall(); addToast('Call was declined', 'info') })
+    s.on('call_ended',    () => { stopRing(); cleanupCall(); addToast('Call ended',        'info') })
 
     s.on('ice_candidate', async ({ candidate }) => {
       const pc = pcRef.current
@@ -195,6 +176,93 @@ export function AppProvider({ children }) {
   }
 
   // ── Call timer ────────────────────────────────────────────────────────────
+  // ── Phone Ring Engine ─────────────────────────────────────────────────────
+  const ringCtxRef      = useRef(null)
+  const ringIntervalRef = useRef(null)
+
+  function startRing() {
+    stopRing()   // clear any previous ring
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext
+      if (!AC) return
+      const ctx = new AC()
+      ringCtxRef.current = ctx
+
+      // Vibrate phone on mobile
+      if (navigator.vibrate) {
+        navigator.vibrate([400,200,400,200,400,200,400,200,400,200,400,200,400])
+      }
+
+      // The "trtrtrtrtrtrtrt" pattern:
+      // A rapid tremolo tone (like a classic landline phone ring)
+      function playRingBurst() {
+        const t = ctx.currentTime
+
+        // Create the carrier oscillator (phone ring frequency)
+        const osc    = ctx.createOscillator()
+        const lfo    = ctx.createOscillator()
+        const lfoGain= ctx.createGain()
+        const master = ctx.createGain()
+
+        osc.type      = 'sine'
+        osc.frequency.value = 820   // main ring frequency
+
+        // LFO at 25 Hz = rapid "trtrtrtr" vibration
+        lfo.type      = 'square'
+        lfo.frequency.value = 25
+
+        lfoGain.gain.value = 0.5
+        master.gain.value  = 0.0
+
+        lfo.connect(lfoGain)
+        lfoGain.connect(master.gain)  // amplitude modulation
+        osc.connect(master)
+        master.connect(ctx.destination)
+
+        // Second tone for richness (phone uses 2 tones)
+        const osc2   = ctx.createOscillator()
+        const master2= ctx.createGain()
+        osc2.type    = 'sine'
+        osc2.frequency.value = 640
+        master2.gain.value   = 0.0
+        lfoGain.connect(master2.gain)
+        osc2.connect(master2)
+        master2.connect(ctx.destination)
+
+        // Envelope: ring for 1s, then pause 0.6s, repeat
+        const ringOn  = 1.0
+        const ringOff = 0.6
+
+        // Fade in
+        master.gain.linearRampToValueAtTime(0.5, t + 0.02)
+        master2.gain.linearRampToValueAtTime(0.3, t + 0.02)
+        // Fade out
+        master.gain.setValueAtTime(0.5, t + ringOn - 0.05)
+        master.gain.linearRampToValueAtTime(0.0, t + ringOn)
+        master2.gain.setValueAtTime(0.3, t + ringOn - 0.05)
+        master2.gain.linearRampToValueAtTime(0.0, t + ringOn)
+
+        osc.start(t);  osc.stop(t + ringOn)
+        osc2.start(t); osc2.stop(t + ringOn)
+        lfo.start(t);  lfo.stop(t + ringOn)
+      }
+
+      // Play first burst immediately, then repeat every 1.6s
+      playRingBurst()
+      ringIntervalRef.current = setInterval(() => {
+        if (ringCtxRef.current) playRingBurst()
+      }, 1600)
+
+    } catch { /* ignore */ }
+  }
+
+  function stopRing() {
+    if (ringIntervalRef.current) { clearInterval(ringIntervalRef.current); ringIntervalRef.current = null }
+    try { ringCtxRef.current?.close() } catch {}
+    ringCtxRef.current = null
+    if (navigator.vibrate) navigator.vibrate(0)  // stop vibration
+  }
+
   // ── Media error handler ───────────────────────────────────────────────────
   function handleMediaError(err, callType = 'audio') {
     console.error('Media error:', err.name, err.message)
@@ -332,6 +400,7 @@ export function AppProvider({ children }) {
 
   // ── Accept incoming call ──────────────────────────────────────────────────
   async function acceptCall() {
+    stopRing()   // stop ringing when answered
     const s = getSocket()
     if (!s || !incomingCall) return
     const { from, callId, offer, callType } = incomingCall
@@ -363,6 +432,7 @@ export function AppProvider({ children }) {
   }
 
   function declineCall() {
+    stopRing()   // stop ringing when declined
     const s = getSocket()
     if (incomingCall) s?.emit('call_decline', { to: incomingCall.from, call_id: incomingCall.callId })
     setIncomingCall(null)
