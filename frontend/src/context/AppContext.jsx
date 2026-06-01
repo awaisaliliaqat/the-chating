@@ -83,10 +83,38 @@ export function AppProvider({ children }) {
       })
     })
 
-    s.on('call_incoming', d => setIncomingCall({
-      from: d.from, callId: d.call_id, offer: d.offer,
-      callType: d.call_type, callerName: d.caller_name, callerColor: d.caller_color,
-    }))
+    s.on('call_incoming', d => {
+      setIncomingCall({
+        from: d.from, callId: d.call_id, offer: d.offer,
+        callType: d.call_type, callerName: d.caller_name, callerColor: d.caller_color,
+      })
+      // Play ring sound
+      try {
+        const ctx = new AudioContext()
+        const playBeep = (freq, start, dur) => {
+          const osc = ctx.createOscillator()
+          const g   = ctx.createGain()
+          osc.connect(g); g.connect(ctx.destination)
+          osc.frequency.value = freq
+          g.gain.setValueAtTime(0.4, ctx.currentTime + start)
+          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+          osc.start(ctx.currentTime + start)
+          osc.stop(ctx.currentTime + start + dur)
+        }
+        // Ring pattern: beeep... beeep...
+        for (let i = 0; i < 3; i++) {
+          playBeep(880, i * 0.8, 0.4)
+          playBeep(660, i * 0.8 + 0.1, 0.3)
+        }
+      } catch { /* ignore */ }
+      // Push notification
+      if (Notification.permission === 'granted') {
+        new Notification(`📞 Incoming call from ${d.caller_name}`, {
+          body: `${d.call_type === 'video' ? '📹 Video' : '📞 Audio'} call — tap to answer`,
+          icon: '/favicon.ico',
+        })
+      }
+    })
 
     s.on('call_answered', async ({ answer, call_id }) => {
       const pc = pcRef.current
@@ -184,8 +212,28 @@ export function AppProvider({ children }) {
   // ── Create RTCPeerConnection ──────────────────────────────────────────────
   function createPC(peerId) {
     const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' },
-                   { urls: 'stun:stun1.l.google.com:19302' }]
+      iceServers: [
+        // STUN servers (for same-network calls)
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        // TURN servers (for cross-network calls — mobile data, different cities)
+        {
+          urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+          ],
+          username:   'openrelayproject',
+          credential: 'openrelayproject',
+        },
+        {
+          urls: 'turn:relay.metered.ca:80',
+          username:   'e8dd65bca5f418e05f3419ee',
+          credential: 'uBBCCrTUKltnBK6i',
+        },
+      ],
+      iceCandidatePoolSize: 10,
     })
     pcRef.current = pc
     remoteDescSet.current = false
