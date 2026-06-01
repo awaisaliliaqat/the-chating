@@ -136,6 +136,41 @@
   margin-top: 20px;
 }
 
+.tapToHear {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #fff;
+  padding: 12px 24px;
+  border-radius: 30px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 9999;
+  box-shadow: 0 4px 20px rgba(0,0,0,.4);
+  animation: bounce 0.6s ease infinite alternate;
+}
+@keyframes bounce { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(-4px); } }
+
+.audioAvatar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.connectedBadge {
+  font-size: 12px;
+  color: var(--green);
+  font-weight: 700;
+  background: var(--green-soft);
+  padding: 3px 10px;
+  border-radius: 12px;
+}
+
 .callTimer {
   font-size: 14px;
   color: #fff;

@@ -257,10 +257,19 @@ export function AppProvider({ children }) {
     remoteDescSet.current = false
     pendingCandidatesRef.current = []
 
-    const remStream = new MediaStream()
+    // Use the stream directly from the event — most reliable approach
     pc.ontrack = e => {
-      e.streams[0].getTracks().forEach(t => remStream.addTrack(t))
-      setRemoteStream(new MediaStream(remStream.getTracks()))
+      console.log('🔊 Got remote track:', e.track.kind, 'streams:', e.streams.length)
+      if (e.streams && e.streams[0]) {
+        setRemoteStream(e.streams[0])
+      } else {
+        // Fallback: create stream from track
+        setRemoteStream(prev => {
+          const s = prev || new MediaStream()
+          s.addTrack(e.track)
+          return new MediaStream(s.getTracks())
+        })
+      }
     }
 
     pc.onicecandidate = e => {
