@@ -1,0 +1,97 @@
+.page{padding:20px 24px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.title{font-size:22px;font-weight:700;color:var(--text-primary);flex-shrink:0}
+.tabBar{display:flex;gap:4px;flex-wrap:wrap;flex-shrink:0}
+.tabBtn{padding:7px 13px;border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--border);color:var(--text-secondary);background:var(--bg-card);transition:all .15s;white-space:nowrap}
+.tabBtn:hover{background:var(--bg-hover);color:var(--text-primary)}
+.tabActive{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
+.section{display:flex;flex-direction:column;gap:12px}
+.hint{font-size:13px;color:var(--text-muted)}
+.empty{text-align:center;padding:30px;color:var(--text-muted);font-size:13px;line-height:1.6}
+.sectionLabel{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);margin-top:4px}
+.inp{background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px;color:var(--text-primary);outline:none;width:100%}
+.inp:focus{border-color:var(--accent)}
+.row{display:flex;gap:8px;align-items:center}
+.saveBtn{background:var(--accent);color:#fff;border:none;padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;display:inline-flex;align-items:center;gap:6px}
+.saveBtn:hover:not(:disabled){background:var(--accent-hover)}
+.saveBtn:disabled{opacity:.6;cursor:not-allowed}
+.clearBtn{background:var(--bg-secondary);border:1px solid var(--border);color:var(--text-secondary);padding:8px 16px;border-radius:10px;font-size:13px}
+.removeBtn{background:var(--red-soft);color:var(--red);border:none;padding:5px 10px;border-radius:8px;font-size:12px;font-weight:600}
+.removeBtn:hover{background:var(--red);color:#fff}
+.closeBtn{background:none;border:none;font-size:18px;color:var(--text-muted);padding:4px;border-radius:6px;margin-left:auto}
+.fieldLabel{font-size:12px;font-weight:600;color:var(--text-secondary)}
+/* Friends grid */
+.friendGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:10px}
+.friendCard{display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 6px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;cursor:pointer;transition:border-color .15s}
+.friendCard:hover{border-color:var(--accent)}
+.friendName{font-size:11px;font-weight:600;color:var(--text-primary);text-align:center}
+/* Gifts */
+.giftBox{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.giftHeader{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:var(--text-primary)}
+.giftGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.giftBtn{background:var(--bg-secondary);border:2px solid var(--border);border-radius:12px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:4px;transition:all .15s;cursor:pointer}
+.giftBtn:hover{border-color:var(--accent);background:var(--accent-soft)}
+.giftActive{border-color:var(--accent)!important;background:var(--accent-soft)!important}
+.sendBtn{background:var(--accent);color:#fff;border:none;padding:12px;border-radius:12px;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px}
+.sendBtn:hover:not(:disabled){background:var(--accent-hover)}
+.sendBtn:disabled{opacity:.6;cursor:not-allowed}
+/* Achievements */
+.achievGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.achievCard{background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.achievEarned{border-color:rgba(245,158,11,.4);background:rgba(245,158,11,.04)}
+.achievLocked{opacity:.5}
+.achievIcon{font-size:28px}
+.achievName{font-size:13px;font-weight:700;color:var(--text-primary)}
+.achievDesc{font-size:11px;color:var(--text-muted);line-height:1.4}
+.earnedBadge{background:rgba(245,158,11,.15);color:#f59e0b;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px}
+.lockedBadge{background:var(--bg-secondary);color:var(--text-muted);font-size:10px;padding:2px 8px;border-radius:8px}
+/* Stats */
+.statsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.statCard{background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:14px;text-align:center}
+.statIcon{font-size:22px;margin-bottom:4px}
+.statVal{font-size:22px;font-weight:800;color:var(--accent)}
+.statLabel{font-size:11px;color:var(--text-muted);margin-top:2px}
+.topFriendRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.topFriendRow:last-child{border-bottom:none}
+.topFriendDot{width:32px;height:32px;border-radius:50%;flex-shrink:0}
+.topFriendName{flex:1;font-size:14px;font-weight:600;color:var(--text-primary)}
+.topFriendCount{font-size:12px;color:var(--text-muted)}
+/* Birthdays */
+.birthdayRow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.birthdayRow:last-child{border-bottom:none}
+.birthdayInfo{flex:1}
+.birthdayName{font-size:14px;font-weight:600;color:var(--text-primary)}
+.birthdayMsg{font-size:12px;color:var(--yellow)}
+.wishBtn{background:var(--accent-soft);color:var(--accent);border:none;padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600}
+.wishBtn:hover{background:var(--accent);color:#fff}
+/* SOS */
+.sosBox{background:rgba(239,68,68,.06);border:2px solid rgba(239,68,68,.3);border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.sosTitle{font-size:20px;font-weight:800;color:var(--red)}
+.sosDesc{font-size:13px;color:var(--text-secondary)}
+.sosBtn{background:var(--red);color:#fff;border:none;padding:14px 28px;border-radius:12px;font-size:16px;font-weight:800;margin-top:6px;animation:pulse 2s ease infinite}
+.sosBtn:hover{background:#dc2626}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}
+.sosContactRow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.sosContactName{flex:1;font-size:14px;font-weight:600;color:var(--text-primary)}
+/* Suggestions */
+.suggestRow{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.suggestRow:last-child{border-bottom:none}
+.suggestInfo{flex:1}
+.suggestName{font-size:14px;font-weight:600;color:var(--text-primary)}
+.suggestMutual{font-size:12px;color:var(--text-muted)}
+.addFriendBtn{background:var(--accent);color:#fff;border:none;padding:7px 14px;border-radius:8px;font-size:13px;font-weight:700}
+.addFriendBtn:hover{background:var(--accent-hover)}
+/* Music */
+.musicPreview{display:flex;align-items:center;gap:14px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:16px}
+/* Bookmarks */
+.bookmarkRow{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.bookmarkRow:last-child{border-bottom:none}
+.bookmarkIcon{font-size:20px;flex-shrink:0}
+.bookmarkContent{flex:1}
+.bookmarkFrom{font-size:12px;font-weight:700;color:var(--accent)}
+.bookmarkText{font-size:13px;color:var(--text-primary);margin-top:2px}
+@media (max-width:768px){
+  .page{padding:14px 12px}
+  .statsGrid{grid-template-columns:repeat(3,1fr)}
+  .achievGrid{grid-template-columns:repeat(2,1fr)}
+  .giftGrid{grid-template-columns:repeat(4,1fr)}
+}

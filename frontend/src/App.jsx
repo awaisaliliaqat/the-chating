@@ -20,6 +20,9 @@ import Calls         from './pages/Calls'
 import AppSettings   from './pages/AppSettings'
 import Admin         from './pages/Admin'
 import CallDirectory from './pages/CallDirectory'
+import Feed          from './pages/Feed'
+import Events        from './pages/Events'
+import Extras        from './pages/Extras'
 
 function Layout({ children }) {
   return (
@@ -77,6 +80,9 @@ export default function App() {
         <Route path="/call-directory" element={<Priv><CallDirectory /></Priv>} />
         <Route path="/settings"      element={<Priv><AppSettings /></Priv>} />
         <Route path="/admin"         element={<Priv><Admin       /></Priv>} />
+        <Route path="/feed"          element={<Priv><Feed        /></Priv>} />
+        <Route path="/events"        element={<Priv><Events      /></Priv>} />
+        <Route path="/extras"        element={<Priv><Extras      /></Priv>} />
         <Route path="*" element={<Navigate to={user?'/':'login'} />} />
       </Routes>
     </>

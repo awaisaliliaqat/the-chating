@@ -144,6 +144,19 @@ export function AppProvider({ children }) {
       }
     })
 
+    s.on('gift_received', d => {
+      addToast(`${d.emoji} ${d.sender_name} sent you a ${d.name}! "${d.message||'💝'}"`, 'success')
+    })
+    s.on('achievement_earned', d => {
+      addToast(`🏆 Achievement unlocked: ${d.icon} ${d.name} — ${d.description}`, 'success')
+    })
+    s.on('sos_alert', d => {
+      addToast(`🚨 SOS from ${d.name}! ${d.map_url}`, 'error')
+    })
+    s.on('warning_received', d => {
+      addToast(`⚠️ Warning from admin: ${d.reason}`, 'warning')
+    })
+
     s.on('friend_request',  u => {
       addToast(`${u.name} sent you a friend request!`, 'info')
       setUser(p => p ? { ...p, pending_requests: (p.pending_requests || 0) + 1 } : p)

@@ -320,6 +320,152 @@ def init_db():
             FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS posts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            content    TEXT    NOT NULL DEFAULT '',
+            image_b64  TEXT,
+            bg_color   TEXT    NOT NULL DEFAULT '',
+            likes      INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS post_likes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id    INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(post_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS post_comments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id    INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            content    TEXT    NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS achievements (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            key         TEXT    NOT NULL UNIQUE,
+            name        TEXT    NOT NULL,
+            description TEXT    NOT NULL,
+            icon        TEXT    NOT NULL DEFAULT '🏆'
+        );
+        CREATE TABLE IF NOT EXISTS user_achievements (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            achievement_key TEXT NOT NULL,
+            earned_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, achievement_key)
+        );
+        CREATE TABLE IF NOT EXISTS bookmarks (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            message_id INTEGER,
+            post_id    INTEGER,
+            note       TEXT    NOT NULL DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id  INTEGER NOT NULL,
+            group_id    INTEGER,
+            title       TEXT    NOT NULL,
+            description TEXT    NOT NULL DEFAULT '',
+            location    TEXT    NOT NULL DEFAULT '',
+            starts_at   DATETIME NOT NULL,
+            ends_at     DATETIME,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS event_attendees (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id   INTEGER NOT NULL,
+            user_id    INTEGER NOT NULL,
+            status     TEXT    NOT NULL DEFAULT 'going',
+            FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id)  REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(event_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS group_notes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id   INTEGER NOT NULL UNIQUE,
+            content    TEXT    NOT NULL DEFAULT '',
+            updated_by INTEGER,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS group_todos (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id   INTEGER NOT NULL,
+            creator_id INTEGER NOT NULL,
+            text       TEXT    NOT NULL,
+            done       INTEGER NOT NULL DEFAULT 0,
+            done_by    INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id)   REFERENCES groups(id) ON DELETE CASCADE,
+            FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS broadcast_lists (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_id   INTEGER NOT NULL,
+            name       TEXT    NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS broadcast_members (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id  INTEGER NOT NULL,
+            user_id  INTEGER NOT NULL,
+            FOREIGN KEY (list_id)  REFERENCES broadcast_lists(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id)  REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(list_id, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS virtual_gifts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id  INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            gift_type  TEXT    NOT NULL,
+            message    TEXT    NOT NULL DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS location_shares (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id  INTEGER NOT NULL,
+            receiver_id INTEGER,
+            group_id   INTEGER,
+            lat        REAL    NOT NULL,
+            lng        REAL    NOT NULL,
+            expires_at DATETIME NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS voice_rooms (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT    NOT NULL,
+            host_id    INTEGER NOT NULL,
+            is_public  INTEGER NOT NULL DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (host_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS sos_contacts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            contact_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id)    REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (contact_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user_id, contact_id)
+        );
+
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL,
@@ -374,6 +520,9 @@ def init_db():
         "ALTER TABLE messages ADD COLUMN edited_at DATETIME",
         "ALTER TABLE messages ADD COLUMN deleted_at DATETIME",
         "ALTER TABLE messages ADD COLUMN expires_at DATETIME",
+        "ALTER TABLE users ADD COLUMN birthday DATE",
+        "ALTER TABLE users ADD COLUMN music_status TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN music_artist TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE groups ADD COLUMN is_announce INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE groups ADD COLUMN avatar_b64 TEXT",
         "ALTER TABLE group_messages ADD COLUMN forward_from_id INTEGER",
@@ -382,6 +531,35 @@ def init_db():
     for sql in migrations:
         try: conn.execute(sql)
         except Exception: pass
+
+    # Seed default achievements
+    achievements = [
+        ('first_message',  'First Words',     'Send your first message',           '💬'),
+        ('messages_10',    'Chatterbox',       'Send 10 messages',                  '🗣️'),
+        ('messages_100',   'Social Butterfly', 'Send 100 messages',                 '🦋'),
+        ('messages_500',   'Talkaholic',       'Send 500 messages',                 '📱'),
+        ('first_friend',   'New Friend',       'Add your first friend',             '🤝'),
+        ('friends_5',      'Social Circle',    'Have 5 friends',                    '👥'),
+        ('friends_10',     'Popular',          'Have 10 friends',                   '⭐'),
+        ('first_call',     'First Call',       'Make your first call',              '📞'),
+        ('first_group',    'Group Founder',    'Create your first group',           '👨‍👩‍👧'),
+        ('first_story',    'Storyteller',      'Post your first story',             '📖'),
+        ('first_post',     'Content Creator',  'Create your first post',            '🖼️'),
+        ('first_reaction', 'Expressive',       'React to a message',               '❤️'),
+        ('profile_complete','Profile Star',    'Complete your profile',             '✨'),
+        ('early_adopter',  'Early Adopter',    'One of the first to join',          '🚀'),
+        ('night_owl',      'Night Owl',        'Send a message after midnight',     '🦉'),
+        ('early_bird',     'Early Bird',       'Send a message before 6am',        '🐦'),
+        ('gift_sender',    'Generous',         'Send a virtual gift',               '🎁'),
+        ('event_creator',  'Party Planner',    'Create your first event',           '🎉'),
+        ('voice_room',     'Public Speaker',   'Host a voice room',                 '🎤'),
+    ]
+    for key, name, desc, icon in achievements:
+        try:
+            conn.execute("INSERT OR IGNORE INTO achievements (key,name,description,icon) VALUES (?,?,?,?)",
+                         (key, name, desc, icon))
+        except Exception:
+            pass
 
     conn.commit()
     conn.close()

@@ -1028,6 +1028,9 @@ def on_send_message(data):
         if found:
             flag_message(db, mid, uid, content, found, "dm")
 
+    # ── Check achievements ──
+    check_message_achievements(db, uid)
+
     # ── Push notification if receiver is offline ──
     if to not in user_sockets:
         sender = db.execute("SELECT name, avatar_color FROM users WHERE id=?",(uid,)).fetchone()
@@ -2105,6 +2108,594 @@ def on_join_invite(data):
     if not uid: return
     code = data.get("code","")
     # Join via socket call handled via HTTP endpoint
+
+# ── Achievements helper ───────────────────────────────────────────────────────
+
+def award_achievement(db, user_id, key):
+    """Award an achievement if not already earned."""
+    try:
+        db.execute("INSERT OR IGNORE INTO user_achievements (user_id,achievement_key) VALUES (?,?)",(user_id,key))
+        db.commit()
+        ach = db.execute("SELECT * FROM achievements WHERE key=?",(key,)).fetchone()
+        if ach and user_id in user_sockets:
+            socketio.emit("achievement_earned",{"key":key,"name":ach["name"],"icon":ach["icon"],"description":ach["description"]},to=f"user_{user_id}")
+    except Exception:
+        pass
+
+def check_message_achievements(db, user_id):
+    count = db.execute("SELECT COUNT(*) as c FROM messages WHERE sender_id=?",(user_id,)).fetchone()["c"]
+    if count == 1:  award_achievement(db, user_id, "first_message")
+    if count == 10: award_achievement(db, user_id, "messages_10")
+    if count == 100:award_achievement(db, user_id, "messages_100")
+    if count == 500:award_achievement(db, user_id, "messages_500")
+    # Night owl / early bird
+    h = datetime.datetime.utcnow().hour
+    if h >= 0 and h < 4:  award_achievement(db, user_id, "night_owl")
+    if h >= 4 and h < 6:  award_achievement(db, user_id, "early_bird")
+
+# ── Posts / Feed ──────────────────────────────────────────────────────────────
+
+@app.route("/api/feed", methods=["GET"])
+def get_feed():
+    uid, err = require_auth()
+    if err: return err
+    page  = max(1, int(request.args.get("page",1)))
+    limit = 20
+    offset = (page-1)*limit
+    db = get_db()
+    rows = db.execute('''
+        SELECT p.*, u.name as user_name, u.avatar_color as user_color, u.avatar_b64 as user_avatar,
+               u.is_verified as user_verified,
+               (SELECT COUNT(*) FROM post_likes WHERE post_id=p.id) as like_count,
+               (SELECT COUNT(*) FROM post_comments WHERE post_id=p.id) as comment_count,
+               EXISTS(SELECT 1 FROM post_likes WHERE post_id=p.id AND user_id=?) as liked_by_me
+        FROM posts p
+        JOIN users u ON p.user_id=u.id
+        WHERE p.user_id=? OR p.user_id IN (
+            SELECT CASE WHEN requester_id=? THEN addressee_id ELSE requester_id END
+            FROM friendships WHERE (requester_id=? OR addressee_id=?) AND status="accepted"
+        )
+        ORDER BY p.created_at DESC LIMIT ? OFFSET ?
+    ''',(uid,uid,uid,uid,uid,limit,offset)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/posts", methods=["POST"])
+def create_post():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    content = (d.get("content") or "").strip()
+    image   = d.get("image_b64")
+    bg      = d.get("bg_color","")
+    if not content and not image: return jsonify({"message":"Content required."}),400
+    db = get_db()
+    db.execute("INSERT INTO posts (user_id,content,image_b64,bg_color) VALUES (?,?,?,?)",(uid,content,image,bg))
+    db.commit()
+    pid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    award_achievement(db, uid, "first_post")
+    post = db.execute("SELECT p.*, u.name as user_name, u.avatar_color as user_color FROM posts p JOIN users u ON p.user_id=u.id WHERE p.id=?",(pid,)).fetchone()
+    db.close()
+    return jsonify(dict(post)),201
+
+@app.route("/api/posts/<int:pid>/like", methods=["POST"])
+def like_post(pid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    existing = db.execute("SELECT id FROM post_likes WHERE post_id=? AND user_id=?",(pid,uid)).fetchone()
+    if existing:
+        db.execute("DELETE FROM post_likes WHERE id=?",(existing["id"],))
+        liked = False
+    else:
+        db.execute("INSERT INTO post_likes (post_id,user_id) VALUES (?,?)",(pid,uid))
+        liked = True
+    db.commit()
+    count = db.execute("SELECT COUNT(*) as c FROM post_likes WHERE post_id=?",(pid,)).fetchone()["c"]
+    db.close()
+    return jsonify({"liked":liked,"count":count}),200
+
+@app.route("/api/posts/<int:pid>/comments", methods=["GET"])
+def get_comments(pid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute("SELECT c.*,u.name as user_name,u.avatar_color as user_color FROM post_comments c JOIN users u ON c.user_id=u.id WHERE c.post_id=? ORDER BY c.created_at ASC",(pid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/posts/<int:pid>/comments", methods=["POST"])
+def add_comment(pid):
+    uid, err = require_auth()
+    if err: return err
+    content = (request.json or {}).get("content","").strip()
+    if not content: return jsonify({"message":"Content required."}),400
+    db = get_db()
+    db.execute("INSERT INTO post_comments (post_id,user_id,content) VALUES (?,?,?)",(pid,uid,content))
+    db.commit()
+    cid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    comment = db.execute("SELECT c.*,u.name as user_name,u.avatar_color as user_color FROM post_comments c JOIN users u ON c.user_id=u.id WHERE c.id=?",(cid,)).fetchone()
+    db.close()
+    return jsonify(dict(comment)),201
+
+@app.route("/api/posts/<int:pid>", methods=["DELETE"])
+def delete_post(pid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("DELETE FROM posts WHERE id=? AND user_id=?",(pid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Deleted."}),200
+
+# ── Achievements ──────────────────────────────────────────────────────────────
+
+@app.route("/api/achievements", methods=["GET"])
+def get_achievements():
+    uid, err = require_auth()
+    if err: return err
+    target = int(request.args.get("user_id", uid))
+    db = get_db()
+    all_ach = db.execute("SELECT * FROM achievements").fetchall()
+    earned  = db.execute("SELECT achievement_key,earned_at FROM user_achievements WHERE user_id=?",(target,)).fetchall()
+    earned_set = {e["achievement_key"]: e["earned_at"] for e in earned}
+    result = []
+    for a in all_ach:
+        d = dict(a)
+        d["earned"]    = a["key"] in earned_set
+        d["earned_at"] = earned_set.get(a["key"])
+        result.append(d)
+    db.close()
+    return jsonify(result),200
+
+# ── Birthday ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/users/birthday", methods=["PUT"])
+def set_birthday():
+    uid, err = require_auth()
+    if err: return err
+    bday = (request.json or {}).get("birthday")  # YYYY-MM-DD
+    db = get_db()
+    db.execute("UPDATE users SET birthday=? WHERE id=?",(bday,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Birthday saved."}),200
+
+@app.route("/api/birthdays/today", methods=["GET"])
+def birthdays_today():
+    uid, err = require_auth()
+    if err: return err
+    today = datetime.datetime.utcnow().strftime("-%m-%d")
+    db = get_db()
+    rows = db.execute('''
+        SELECT u.* FROM users u
+        JOIN friendships f ON (f.requester_id=? OR f.addressee_id=?) AND f.status="accepted"
+        AND (CASE WHEN f.requester_id=? THEN f.addressee_id ELSE f.requester_id END = u.id)
+        WHERE u.birthday LIKE ?
+    ''',(uid,uid,uid,f"%{today}")).fetchall()
+    db.close()
+    return jsonify([user_dict(r) for r in rows]),200
+
+# ── Music Status ──────────────────────────────────────────────────────────────
+
+@app.route("/api/users/music", methods=["PUT"])
+def set_music():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    db.execute("UPDATE users SET music_status=?,music_artist=? WHERE id=?",
+               (d.get("song","")[:80], d.get("artist","")[:60], uid))
+    db.commit()
+    db.close()
+    return jsonify({"message":"Music updated."}),200
+
+# ── Bookmarks ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/bookmarks", methods=["GET"])
+def get_bookmarks():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT b.*, m.content as msg_content, m.msg_type,
+               u.name as sender_name, u.avatar_color as sender_color
+        FROM bookmarks b
+        LEFT JOIN messages m ON b.message_id=m.id
+        LEFT JOIN users u ON m.sender_id=u.id
+        WHERE b.user_id=? ORDER BY b.created_at DESC
+    ''',(uid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/bookmarks", methods=["POST"])
+def add_bookmark():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    db.execute("INSERT INTO bookmarks (user_id,message_id,post_id,note) VALUES (?,?,?,?)",
+               (uid, d.get("message_id"), d.get("post_id"), d.get("note","")))
+    db.commit(); db.close()
+    return jsonify({"message":"Bookmarked!"}),201
+
+@app.route("/api/bookmarks/<int:bid>", methods=["DELETE"])
+def del_bookmark(bid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("DELETE FROM bookmarks WHERE id=? AND user_id=?",(bid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Removed."}),200
+
+# ── Events ────────────────────────────────────────────────────────────────────
+
+@app.route("/api/events", methods=["GET"])
+def get_events():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT e.*, u.name as creator_name, u.avatar_color as creator_color,
+               (SELECT COUNT(*) FROM event_attendees WHERE event_id=e.id AND status="going") as going_count,
+               EXISTS(SELECT 1 FROM event_attendees WHERE event_id=e.id AND user_id=?) as attending
+        FROM events e JOIN users u ON e.creator_id=u.id
+        WHERE e.starts_at >= datetime("now","-1 day")
+        AND (e.creator_id=? OR e.creator_id IN (
+            SELECT CASE WHEN requester_id=? THEN addressee_id ELSE requester_id END
+            FROM friendships WHERE (requester_id=? OR addressee_id=?) AND status="accepted"
+        ))
+        ORDER BY e.starts_at ASC LIMIT 30
+    ''',(uid,uid,uid,uid,uid)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/events", methods=["POST"])
+def create_event():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    title = (d.get("title") or "").strip()
+    if not title or not d.get("starts_at"): return jsonify({"message":"Title and start time required."}),400
+    db = get_db()
+    db.execute("INSERT INTO events (creator_id,group_id,title,description,location,starts_at,ends_at) VALUES (?,?,?,?,?,?,?)",
+               (uid,d.get("group_id"),title,d.get("description",""),d.get("location",""),d.get("starts_at"),d.get("ends_at")))
+    db.commit()
+    eid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    award_achievement(db, uid, "event_creator")
+    db.execute("INSERT INTO event_attendees (event_id,user_id,status) VALUES (?,?,'going')",(eid,uid))
+    db.commit()
+    event = dict(db.execute("SELECT * FROM events WHERE id=?",(eid,)).fetchone())
+    db.close()
+    return jsonify(event),201
+
+@app.route("/api/events/<int:eid>/attend", methods=["POST"])
+def attend_event(eid):
+    uid, err = require_auth()
+    if err: return err
+    status = (request.json or {}).get("status","going")
+    db = get_db()
+    db.execute("INSERT OR REPLACE INTO event_attendees (event_id,user_id,status) VALUES (?,?,?)",(eid,uid,status))
+    db.commit(); db.close()
+    return jsonify({"message":"Updated!"}),200
+
+# ── Group Notes & Todos ───────────────────────────────────────────────────────
+
+@app.route("/api/groups/<int:gid>/notes", methods=["GET","PUT"])
+def group_notes(gid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        note = db.execute("SELECT * FROM group_notes WHERE group_id=?",(gid,)).fetchone()
+        db.close()
+        return jsonify(dict(note) if note else {"group_id":gid,"content":""}),200
+    content = (request.json or {}).get("content","")
+    now = datetime.datetime.utcnow().isoformat()
+    db.execute("INSERT OR REPLACE INTO group_notes (group_id,content,updated_by,updated_at) VALUES (?,?,?,?)",(gid,content,uid,now))
+    db.commit(); db.close()
+    socketio.emit("group_notes_updated",{"group_id":gid,"content":content},to=f"group_{gid}")
+    return jsonify({"message":"Saved."}),200
+
+@app.route("/api/groups/<int:gid>/todos", methods=["GET","POST"])
+def group_todos(gid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT t.*,u.name as creator_name FROM group_todos t JOIN users u ON t.creator_id=u.id WHERE t.group_id=? ORDER BY t.done ASC, t.created_at DESC",(gid,)).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows]),200
+    text = (request.json or {}).get("text","").strip()
+    if not text: return jsonify({"message":"Text required."}),400
+    db.execute("INSERT INTO group_todos (group_id,creator_id,text) VALUES (?,?,?)",(gid,uid,text))
+    db.commit()
+    tid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    todo = dict(db.execute("SELECT * FROM group_todos WHERE id=?",(tid,)).fetchone())
+    db.close()
+    socketio.emit("group_todo_added",{**todo,"group_id":gid},to=f"group_{gid}")
+    return jsonify(todo),201
+
+@app.route("/api/groups/<int:gid>/todos/<int:tid>", methods=["PUT","DELETE"])
+def group_todo(gid,tid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "DELETE":
+        db.execute("DELETE FROM group_todos WHERE id=? AND group_id=?",(tid,gid))
+        db.commit(); db.close()
+        socketio.emit("group_todo_removed",{"id":tid,"group_id":gid},to=f"group_{gid}")
+        return jsonify({"message":"Removed."}),200
+    done = int((request.json or {}).get("done",0))
+    db.execute("UPDATE group_todos SET done=?,done_by=? WHERE id=?",(done,uid if done else None,tid))
+    db.commit()
+    todo = dict(db.execute("SELECT * FROM group_todos WHERE id=?",(tid,)).fetchone())
+    db.close()
+    socketio.emit("group_todo_updated",{**todo,"group_id":gid},to=f"group_{gid}")
+    return jsonify(todo),200
+
+# ── Broadcast Lists ───────────────────────────────────────────────────────────
+
+@app.route("/api/broadcasts", methods=["GET","POST"])
+def broadcast_lists():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT b.*, COUNT(bm.user_id) as member_count FROM broadcast_lists b LEFT JOIN broadcast_members bm ON b.id=bm.list_id WHERE b.owner_id=? GROUP BY b.id",(uid,)).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows]),200
+    name = (request.json or {}).get("name","").strip()
+    if not name: return jsonify({"message":"Name required."}),400
+    db.execute("INSERT INTO broadcast_lists (owner_id,name) VALUES (?,?)",(uid,name))
+    db.commit()
+    lid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    db.close()
+    return jsonify({"id":lid,"name":name}),201
+
+@app.route("/api/broadcasts/<int:lid>/send", methods=["POST"])
+def send_broadcast_msg(lid):
+    uid, err = require_auth()
+    if err: return err
+    content = (request.json or {}).get("content","").strip()
+    if not content: return jsonify({"message":"Content required."}),400
+    db = get_db()
+    bl = db.execute("SELECT * FROM broadcast_lists WHERE id=? AND owner_id=?",(lid,uid)).fetchone()
+    if not bl: db.close(); return jsonify({"message":"Not found."}),404
+    members = db.execute("SELECT user_id FROM broadcast_members WHERE list_id=?",(lid,)).fetchall()
+    now = datetime.datetime.utcnow().isoformat()
+    count = 0
+    sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    for m in members:
+        mid2 = m["user_id"]
+        db.execute("INSERT INTO messages (sender_id,receiver_id,content,created_at) VALUES (?,?,?,?)",(uid,mid2,content,now))
+        db.commit()
+        msg_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        msg = dict(db.execute("SELECT * FROM messages WHERE id=?",(msg_id,)).fetchone())
+        msg["reactions"] = []; msg["reply_to"] = None
+        socketio.emit("new_message",msg,to=f"user_{mid2}")
+        count += 1
+        if mid2 not in user_sockets:
+            send_push_to_user(mid2, f"📢 {sender['name']}", content[:80], {"type":"new_message","sender_id":uid})
+    db.close()
+    return jsonify({"message":f"Sent to {count} people."}),200
+
+# ── Virtual Gifts ─────────────────────────────────────────────────────────────
+
+GIFT_TYPES = {
+    "rose":    {"name":"Rose",       "emoji":"🌹", "animation":"float"},
+    "heart":   {"name":"Heart",      "emoji":"❤️",  "animation":"pulse"},
+    "cake":    {"name":"Birthday Cake","emoji":"🎂","animation":"bounce"},
+    "trophy":  {"name":"Trophy",     "emoji":"🏆",  "animation":"spin"},
+    "star":    {"name":"Gold Star",  "emoji":"⭐",  "animation":"twinkle"},
+    "diamond": {"name":"Diamond",    "emoji":"💎",  "animation":"sparkle"},
+    "hug":     {"name":"Virtual Hug","emoji":"🤗",  "animation":"pulse"},
+    "confetti":{"name":"Confetti",   "emoji":"🎊",  "animation":"burst"},
+}
+
+@app.route("/api/gifts", methods=["POST"])
+def send_gift():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    to       = d.get("to")
+    gtype    = d.get("gift_type","heart")
+    message  = (d.get("message") or "").strip()[:100]
+    if not to or gtype not in GIFT_TYPES: return jsonify({"message":"Invalid."}),400
+    db = get_db()
+    sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    db.execute("INSERT INTO virtual_gifts (sender_id,receiver_id,gift_type,message) VALUES (?,?,?,?)",(uid,to,gtype,message))
+    db.commit(); db.close()
+    gift_info = GIFT_TYPES[gtype]
+    payload = {"from":uid,"sender_name":sender["name"],"gift_type":gtype,
+               "emoji":gift_info["emoji"],"name":gift_info["name"],
+               "animation":gift_info["animation"],"message":message}
+    socketio.emit("gift_received",payload,to=f"user_{to}")
+    award_achievement(db, uid, "gift_sender")
+    return jsonify({"message":"Gift sent! 🎁"}),200
+
+# ── Live Location ─────────────────────────────────────────────────────────────
+
+@app.route("/api/location/share", methods=["POST"])
+def share_location():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    lat  = d.get("lat")
+    lng  = d.get("lng")
+    to   = d.get("to")
+    mins = int(d.get("minutes", 15))
+    if lat is None or lng is None: return jsonify({"message":"lat/lng required."}),400
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(minutes=mins)).isoformat()
+    db = get_db()
+    sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    db.execute("INSERT INTO location_shares (sender_id,receiver_id,lat,lng,expires_at) VALUES (?,?,?,?,?)",(uid,to,lat,lng,expires))
+    db.commit(); db.close()
+    payload = {"from":uid,"sender_name":sender["name"],"lat":lat,"lng":lng,"expires_at":expires,"minutes":mins}
+    if to: socketio.emit("location_shared",payload,to=f"user_{to}")
+    return jsonify({"message":"Location shared!","expires_at":expires}),200
+
+# ── Chat Statistics ───────────────────────────────────────────────────────────
+
+@app.route("/api/messages/stats/mine", methods=["GET"])
+def my_stats():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    total_sent = db.execute("SELECT COUNT(*) as c FROM messages WHERE sender_id=? AND deleted_at IS NULL",(uid,)).fetchone()["c"]
+    total_recv = db.execute("SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND deleted_at IS NULL",(uid,)).fetchone()["c"]
+    top_friends = db.execute('''
+        SELECT CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as friend_id,
+               COUNT(*) as msg_count, u.name as friend_name, u.avatar_color
+        FROM messages m JOIN users u ON (CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END = u.id)
+        WHERE (sender_id=? OR receiver_id=?) AND deleted_at IS NULL
+        GROUP BY friend_id ORDER BY msg_count DESC LIMIT 5
+    ''',(uid,uid,uid,uid)).fetchall()
+    busiest_hour = db.execute('''
+        SELECT strftime("%H",created_at) as hour, COUNT(*) as c
+        FROM messages WHERE sender_id=? AND deleted_at IS NULL
+        GROUP BY hour ORDER BY c DESC LIMIT 1
+    ''',(uid,)).fetchone()
+    db.close()
+    return jsonify({
+        "total_sent":   total_sent,
+        "total_received": total_recv,
+        "top_friends":  [dict(r) for r in top_friends],
+        "busiest_hour": busiest_hour["hour"] if busiest_hour else None,
+    }),200
+
+# ── Emergency SOS ─────────────────────────────────────────────────────────────
+
+@app.route("/api/sos/contacts", methods=["GET","POST","DELETE"])
+def sos_contacts():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT u.* FROM sos_contacts s JOIN users u ON s.contact_id=u.id WHERE s.user_id=?",(uid,)).fetchall()
+        db.close()
+        return jsonify([user_dict(r) for r in rows]),200
+    if request.method == "POST":
+        cid = (request.json or {}).get("contact_id")
+        try:
+            db.execute("INSERT INTO sos_contacts (user_id,contact_id) VALUES (?,?)",(uid,cid))
+            db.commit()
+        except: pass
+        db.close()
+        return jsonify({"message":"SOS contact added."}),201
+    cid = (request.json or {}).get("contact_id")
+    db.execute("DELETE FROM sos_contacts WHERE user_id=? AND contact_id=?",(uid,cid))
+    db.commit(); db.close()
+    return jsonify({"message":"Removed."}),200
+
+@app.route("/api/sos/send", methods=["POST"])
+def send_sos():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    lat = d.get("lat"); lng = d.get("lng")
+    db = get_db()
+    me = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    contacts = db.execute("SELECT contact_id FROM sos_contacts WHERE user_id=?",(uid,)).fetchall()
+    now = datetime.datetime.utcnow().isoformat()
+    map_url = f"https://maps.google.com/maps?q={lat},{lng}" if lat and lng else "Location not available"
+    sos_msg = f"🚨 SOS from {me['name']}!\nI need help! My location: {map_url}"
+    sent = 0
+    for c in contacts:
+        cid = c["contact_id"]
+        db.execute("INSERT INTO messages (sender_id,receiver_id,content) VALUES (?,?,?)",(uid,cid,sos_msg))
+        db.commit()
+        msg_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+        msg = dict(db.execute("SELECT * FROM messages WHERE id=?",(msg_id,)).fetchone())
+        msg["reactions"]=[]; msg["reply_to"]=None
+        socketio.emit("new_message",msg,to=f"user_{cid}")
+        socketio.emit("sos_alert",{"from":uid,"name":me["name"],"lat":lat,"lng":lng,"map_url":map_url},to=f"user_{cid}")
+        send_push_to_user(cid, f"🚨 SOS from {me['name']}!", "They need help! Tap to see location.", {"type":"sos","lat":lat,"lng":lng})
+        sent += 1
+    db.close()
+    return jsonify({"message":f"SOS sent to {sent} contacts!"}),200
+
+# ── Voice Rooms ───────────────────────────────────────────────────────────────
+
+voice_room_members = {}  # room_id -> {user_id: {name, color, muted}}
+
+@app.route("/api/voice-rooms", methods=["GET","POST"])
+def voice_rooms():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT r.*, u.name as host_name, u.avatar_color as host_color FROM voice_rooms r JOIN users u ON r.host_id=u.id WHERE r.is_public=1 ORDER BY r.created_at DESC LIMIT 20").fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d["live_count"] = len(voice_room_members.get(r["id"], {}))
+            result.append(d)
+        db.close()
+        return jsonify(result),200
+    name = (request.json or {}).get("name","").strip()
+    if not name: return jsonify({"message":"Name required."}),400
+    db.execute("INSERT INTO voice_rooms (name,host_id,is_public) VALUES (?,?,?)",(name,uid,1))
+    db.commit()
+    rid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    award_achievement(db, uid, "voice_room")
+    db.close()
+    return jsonify({"id":rid,"name":name}),201
+
+@socketio.on("join_voice_room")
+def on_join_vr(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    rid = data.get("room_id")
+    if not rid: return
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    db.close()
+    if rid not in voice_room_members: voice_room_members[rid] = {}
+    voice_room_members[rid][uid] = {"name":user["name"],"color":user["avatar_color"],"muted":False}
+    join_room(f"vr_{rid}")
+    emit("voice_room_update",{"room_id":rid,"members":list(voice_room_members[rid].values())},to=f"vr_{rid}")
+
+@socketio.on("leave_voice_room")
+def on_leave_vr(data):
+    uid = socket_users.get(request.sid)
+    rid = data.get("room_id")
+    if uid and rid and rid in voice_room_members:
+        voice_room_members[rid].pop(uid,None)
+        leave_room(f"vr_{rid}")
+        emit("voice_room_update",{"room_id":rid,"members":list(voice_room_members[rid].values())},to=f"vr_{rid}")
+
+@socketio.on("voice_room_audio")
+def on_vr_audio(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    rid = data.get("room_id")
+    # Relay audio to all others in the room
+    emit("voice_room_audio",{"from":uid,"pcm16":data.get("pcm16"),"sampleRate":data.get("sampleRate",16000)},to=f"vr_{rid}",include_self=False)
+
+# ── Friend Suggestions ────────────────────────────────────────────────────────
+
+@app.route("/api/users/suggestions", methods=["GET"])
+def friend_suggestions():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    # People with mutual friends
+    rows = db.execute('''
+        SELECT u.*, COUNT(*) as mutual_count FROM users u
+        JOIN friendships f1 ON (f1.requester_id=u.id OR f1.addressee_id=u.id) AND f1.status="accepted"
+        JOIN friendships f2 ON (
+            (f2.requester_id=? OR f2.addressee_id=?) AND f2.status="accepted"
+            AND (CASE WHEN f1.requester_id=u.id THEN f1.addressee_id ELSE f1.requester_id END) IN
+            (CASE WHEN f2.requester_id=? THEN f2.addressee_id ELSE f2.requester_id END)
+        )
+        WHERE u.id != ?
+        AND u.id NOT IN (SELECT CASE WHEN requester_id=? THEN addressee_id ELSE requester_id END FROM friendships WHERE (requester_id=? OR addressee_id=?))
+        GROUP BY u.id ORDER BY mutual_count DESC LIMIT 10
+    ''',(uid,uid,uid,uid,uid,uid,uid)).fetchall()
+    result = _annotate_friendship(db, uid, rows)
+    db.close()
+    for i,r in enumerate(result):
+        if i < len(rows): r["mutual_count"] = rows[i]["mutual_count"]
+    return jsonify(result),200
 
 if __name__ == "__main__":
     port  = int(os.getenv("PORT",5001))

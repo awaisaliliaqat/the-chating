@@ -5,13 +5,16 @@ import Avatar from './Avatar'
 import s from './Sidebar.module.css'
 
 const NAV = [
-  { path: '/',         icon: '⊞',  label: 'Home'     },
-  { path: '/messages', icon: '💬', label: 'Messages'  },
-  { path: '/groups',   icon: '👥', label: 'Groups'    },
-  { path: '/rooms',    icon: '🌐', label: 'Rooms'     },
-  { path: '/friends',  icon: '🤝', label: 'Friends'   },
-  { path: '/contacts', icon: '📒', label: 'Contacts'  },
-  { path: '/call-directory', icon: '📡', label: 'Call Anyone' },
+  { path: '/',         icon: '⊞',  label: 'Home'       },
+  { path: '/feed',     icon: '📸', label: 'Feed'       },
+  { path: '/messages', icon: '💬', label: 'Messages'   },
+  { path: '/groups',   icon: '👥', label: 'Groups'     },
+  { path: '/rooms',    icon: '🌐', label: 'Rooms'      },
+  { path: '/friends',  icon: '🤝', label: 'Friends'    },
+  { path: '/events',   icon: '📅', label: 'Events'     },
+  { path: '/extras',   icon: '✨', label: 'Extras'     },
+  { path: '/contacts', icon: '📒', label: 'Contacts'   },
+  { path: '/call-directory', icon: '📡', label: 'Call Anyone'  },
   { path: '/calls',          icon: '📞', label: 'Call History' },
 ]
 
