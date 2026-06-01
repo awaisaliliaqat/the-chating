@@ -192,7 +192,14 @@ export function AppProvider({ children }) {
   // ── Start outgoing call ───────────────────────────────────────────────────
   async function startCall(friendId, callType = 'audio') {
     const s = getSocket()
-    if (!s) return
+    if (!s) { addToast('Not connected. Please refresh the page.', 'error'); return }
+
+    // Check if HTTPS (required for microphone/camera)
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      addToast('Calling requires HTTPS. Use: https://the-chating.47.129.200.84.nip.io', 'error')
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia(
         callType === 'video' ? { audio: true, video: true } : { audio: true }
@@ -208,8 +215,14 @@ export function AppProvider({ children }) {
 
       s.emit('call_offer', { to: friendId, offer, call_type: callType })
       setActiveCall({ peerId: friendId, callId: null, callType, outgoing: true })
-    } catch {
-      addToast('Could not access microphone/camera', 'error')
+    } catch(err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        addToast('Microphone/camera permission denied. Allow it in your browser settings.', 'error')
+      } else if (err.name === 'NotFoundError') {
+        addToast('No microphone found. Please connect one and try again.', 'error')
+      } else {
+        addToast('Could not start call: ' + err.message, 'error')
+      }
       cleanupCall()
     }
   }
