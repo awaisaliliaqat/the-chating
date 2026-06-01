@@ -372,7 +372,7 @@ def set_availability():
     user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
     db.close()
     # Broadcast to everyone
-    socketio.emit("user_availability", {"user_id": uid, "available": available, "user": user_dict(user)}, broadcast=True)
+    socketio.emit("user_availability", {"user_id": uid, "available": available, "user": user_dict(user)})
     return jsonify({"available": available}), 200
 
 # ── Blocking ──────────────────────────────────────────────────────────────────
@@ -1266,7 +1266,7 @@ def admin_broadcast():
         "message": message,
         "from": admin["name"],
         "timestamp": datetime.datetime.utcnow().isoformat()
-    }, broadcast=True)
+    })
     return jsonify({"message": f"Broadcast sent to all {len(user_sockets)} online users."}), 200
 
 @app.route("/api/admin/messages", methods=["GET"])
