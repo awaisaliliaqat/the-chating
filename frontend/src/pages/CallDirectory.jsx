@@ -4,17 +4,35 @@ import Avatar from '../components/Avatar'
 import s from './CallDirectory.module.css'
 
 export default function CallDirectory() {
-  const { user, api, startCall, availableUsers, onlineUsers, addToast, micBlocked, setMicBlocked } = useContext(AppContext)
-  const [permChecked, setPermChecked] = useState(false)
-  const [permState,   setPermState]   = useState('unknown') // 'granted'|'denied'|'prompt'|'unknown'
+  const { user, api, startCall, onlineUsers, addToast, micBlocked, setMicBlocked } = useContext(AppContext)
+
+  const [friends,    setFriends]    = useState([])
+  const [others,     setOthers]     = useState([])   // available non-friends
+  const [search,     setSearch]     = useState('')
+  const [callingId,  setCallingId]  = useState(null)
+  const [permState,  setPermState]  = useState('unknown')
+  const [permChecked,setPermChecked]= useState(false)
 
   // Check microphone permission on mount
   useEffect(() => {
     if (!navigator.permissions) { setPermChecked(true); return }
     navigator.permissions.query({ name: 'microphone' })
-      .then(r => { setPermState(r.state); setPermChecked(true); r.onchange = () => setPermState(r.state) })
+      .then(r => {
+        setPermState(r.state)
+        setPermChecked(true)
+        r.onchange = () => setPermState(r.state)
+      })
       .catch(() => setPermChecked(true))
   }, [])
+
+  // Load friends + available others
+  useEffect(() => {
+    api('/friends').then(r => setFriends(r.data)).catch(() => {})
+    api('/users/suggested').then(r => {
+      // Only show non-friends who marked available
+      setOthers(r.data.filter(u => u.available_for_calls && u.friendship_status !== 'accepted'))
+    }).catch(() => {})
+  }, []) // eslint-disable-line
 
   async function requestMicPermission() {
     try {
@@ -23,113 +41,37 @@ export default function CallDirectory() {
       setPermState('granted')
       setMicBlocked(false)
       addToast('✅ Microphone access granted! You can now make calls.', 'success')
-    } catch(err) {
+    } catch {
       setPermState('denied')
-      addToast('❌ Microphone blocked. Please allow it in browser settings.', 'error')
+      addToast('❌ Microphone blocked. Allow it in browser settings.', 'error')
     }
-  }
-
-  const [available,    setAvailable]    = useState(false)
-  const [users,        setUsers]        = useState([])
-  const [toggling,     setToggling]     = useState(false)
-  const [callingId,    setCallingId]    = useState(null)
-  const [filter,       setFilter]       = useState('all')   // all | audio | video
-  const [search,       setSearch]       = useState('')
-
-  // Load initial list
-  useEffect(() => {
-    api('/users/available').then(r => setUsers(r.data)).catch(() => {})
-    // Sync my own availability from server
-    api('/me').then(r => setAvailable(!!r.data.available_for_calls)).catch(() => {})
-  }, []) // eslint-disable-line
-
-  // Live updates from socket
-  useEffect(() => {
-    const list = Array.from(availableUsers.values())
-    if (list.length > 0 || availableUsers.size === 0) {
-      setUsers(prev => {
-        // Merge: remove users who went offline, add/update available ones
-        const unavailableIds = new Set()
-        prev.forEach(u => { if (!availableUsers.has(u.id) && u.id !== user?.id) unavailableIds.add(u.id) })
-        const merged = prev.filter(u => !unavailableIds.has(u.id))
-        list.forEach(u => {
-          if (!merged.find(x => x.id === u.id)) merged.push(u)
-        })
-        return merged
-      })
-    }
-  }, [availableUsers]) // eslint-disable-line
-
-  async function toggleAvailability() {
-    setToggling(true)
-    try {
-      const r = await api('/users/availability', { method: 'PUT', data: { available: !available } })
-      setAvailable(r.data.available)
-      if (r.data.available) {
-        addToast('You are now available for calls 📞', 'success')
-      } else {
-        addToast('You are no longer available', 'info')
-      }
-    } catch { addToast('Failed to update status', 'error') }
-    finally { setToggling(false) }
   }
 
   async function callUser(u, type) {
     setCallingId(u.id)
-    setTimeout(() => setCallingId(null), 3000)
+    setTimeout(() => setCallingId(null), 4000)
     startCall(u.id, type)
   }
 
-  function randomCall(type) {
-    const eligible = users.filter(u => onlineUsers.has(u.id) || u.is_online)
-    if (eligible.length === 0) { addToast('No one available right now. Try again soon!', 'info'); return }
-    const pick = eligible[Math.floor(Math.random() * eligible.length)]
-    addToast(`Calling ${pick.name}…`, 'info')
-    callUser(pick, type)
-  }
-
-  const filtered = users.filter(u => {
-    if (u.id === user?.id) return false
-    if (search && !u.name.toLowerCase().includes(search.toLowerCase()) &&
-        !(u.username||'').toLowerCase().includes(search.toLowerCase())) return false
-    return true
-  })
-
-  const onlineCount = filtered.filter(u => onlineUsers.has(u.id) || u.is_online).length
+  const q = search.toLowerCase()
+  const filteredFriends = friends.filter(f =>
+    !q || f.name.toLowerCase().includes(q) || (f.username || '').toLowerCase().includes(q)
+  )
+  const onlineFriends  = filteredFriends.filter(f => onlineUsers.has(f.id))
+  const offlineFriends = filteredFriends.filter(f => !onlineUsers.has(f.id))
 
   return (
     <div className={s.page}>
-      {/* ── Hero header ── */}
-      <div className={s.hero}>
-        <div className={s.heroLeft}>
-          <h1 className={s.heroTitle}>📞 Call Directory</h1>
-          <p className={s.heroSub}>
-            {filtered.length} people available · {onlineCount} online now
-          </p>
-        </div>
 
-        {/* Your availability toggle */}
-        <div className={s.availableCard}>
-          <div className={s.availableInfo}>
-            <div className={s.availableLabel}>Your status</div>
-            <div className={`${s.availableStatus} ${available ? s.statusOn : s.statusOff}`}>
-              {available ? '🟢 Available for calls' : '⚫ Not available'}
-            </div>
-          </div>
-          <button
-            className={`${s.toggleBtn} ${available ? s.toggleOn : s.toggleOff}`}
-            onClick={toggleAvailability}
-            disabled={toggling}
-          >
-            {toggling
-              ? <span className="spinner" />
-              : available ? 'Go Unavailable' : 'Go Available'
-            }
-          </button>
+      {/* Header */}
+      <div className={s.hero}>
+        <div>
+          <h1 className={s.heroTitle}>📞 Call</h1>
+          <p className={s.heroSub}>{onlineFriends.length} friends online · {friends.length} total friends</p>
         </div>
       </div>
 
-      {/* ── Mic permission banner ── */}
+      {/* Mic permission banner */}
       {permChecked && permState !== 'granted' && (
         <div className={s.permBanner}>
           <div className={s.permLeft}>
@@ -137,118 +79,153 @@ export default function CallDirectory() {
             <div>
               <div className={s.permTitle}>
                 {permState === 'denied'
-                  ? 'Microphone is BLOCKED — calls will not work'
-                  : 'Microphone permission needed for calls'}
+                  ? 'Microphone BLOCKED — tap to fix'
+                  : 'Allow microphone to make calls'}
               </div>
               <div className={s.permSub}>
                 {permState === 'denied'
-                  ? 'Click the 🔒 padlock in your browser address bar → Microphone → Allow'
-                  : 'Click the button to allow microphone access so you can make calls'}
+                  ? 'Click the 🔒 padlock in address bar → Microphone → Allow → Refresh'
+                  : 'Browser needs permission to use your microphone'}
               </div>
             </div>
           </div>
           {permState !== 'denied' && (
-            <button className={s.permBtn} onClick={requestMicPermission}>
-              Allow Microphone
-            </button>
+            <button className={s.permBtn} onClick={requestMicPermission}>Allow Mic</button>
           )}
           {permState === 'denied' && (
-            <button className={s.permBtnFix} onClick={() => {
-              addToast('Click the 🔒 padlock → Microphone → Allow → Refresh page', 'warning')
-            }}>
-              How to fix?
-            </button>
+            <button className={s.permBtnFix} onClick={() =>
+              addToast('🔒 padlock → Microphone → Allow → Refresh page', 'warning')
+            }>How to fix</button>
           )}
         </div>
       )}
 
-      {/* ── Action bar ── */}
-      <div className={s.actionBar}>
-        <div className={s.searchBox}>
-          <span>🔍</span>
-          <input
-            className={s.searchInput}
-            placeholder="Search by name or @username…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-
-        <div className={s.randomBtns}>
-          <button className={s.randomAudio} onClick={() => randomCall('audio')}>
-            🎲 Random Audio Call
-          </button>
-          <button className={s.randomVideo} onClick={() => randomCall('video')}>
-            🎲 Random Video Call
-          </button>
-        </div>
+      {/* Search */}
+      <div className={s.searchBox}>
+        <span>🔍</span>
+        <input
+          className={s.searchInput}
+          placeholder="Search friends…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+        {search && <button className={s.clearBtn} onClick={() => setSearch('')}>✕</button>}
       </div>
 
-      {/* ── Info banner ── */}
-      {!available && (
-        <div className={s.infoBanner}>
-          💡 Toggle <strong>Go Available</strong> above so others can call you too. You can still call anyone on this page anytime.
+      {/* ── Online Friends ── */}
+      {onlineFriends.length > 0 && (
+        <section>
+          <div className={s.sectionHead}>
+            <span className={s.onlineDot} />
+            Online Friends
+            <span className={s.sectionCount}>{onlineFriends.length}</span>
+          </div>
+          <div className={s.friendList}>
+            {onlineFriends.map(f => (
+              <FriendCallCard
+                key={f.id} user={f} online={true}
+                callingId={callingId} onCall={callUser}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ── Offline Friends ── */}
+      {offlineFriends.length > 0 && (
+        <section>
+          <div className={s.sectionHead} style={{ marginTop: onlineFriends.length > 0 ? 16 : 0 }}>
+            <span className={s.offlineDot} />
+            All Friends
+            <span className={s.sectionCount}>{offlineFriends.length}</span>
+          </div>
+          <div className={s.friendList}>
+            {offlineFriends.map(f => (
+              <FriendCallCard
+                key={f.id} user={f} online={false}
+                callingId={callingId} onCall={callUser}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* No friends */}
+      {friends.length === 0 && (
+        <div className={s.empty}>
+          <div className={s.emptyIcon}>👥</div>
+          <div className={s.emptyTitle}>No friends yet</div>
+          <div className={s.emptySub}>Add friends first, then you can call them here</div>
         </div>
       )}
 
-      {/* ── Users grid ── */}
-      {filtered.length === 0 ? (
-        <div className={s.empty}>
-          <div className={s.emptyIcon}>📵</div>
-          <div className={s.emptyTitle}>
-            {search ? `No results for "${search}"` : 'No one available right now'}
+      {/* ── Others available to call ── */}
+      {others.length > 0 && !search && (
+        <section>
+          <div className={s.sectionHead} style={{ marginTop: 20 }}>
+            <span className={s.onlineDot} />
+            Other People Available
+            <span className={s.sectionCount}>{others.length}</span>
           </div>
-          <div className={s.emptySub}>
-            {!search && 'Be the first! Toggle "Go Available" above and others can call you.'}
-          </div>
-        </div>
-      ) : (
-        <div className={s.grid}>
-          {filtered.map(u => {
-            const isOnline  = onlineUsers.has(u.id) || u.is_online
-            const isCalling = callingId === u.id
-            return (
-              <div key={u.id} className={`${s.card} ${isOnline ? s.cardOnline : s.cardOffline}`}>
-                {/* Online indicator */}
-                <div className={s.cardStatus}>
-                  {isOnline
-                    ? <span className={s.onlinePill}>🟢 Online</span>
-                    : <span className={s.offlinePill}>⚫ Away</span>
-                  }
-                </div>
-
-                {/* Avatar */}
-                <div className={s.cardAvatar}>
-                  <Avatar user={u} size={64} online={isOnline} />
-                </div>
-
-                {/* Info */}
+          <div className={s.grid}>
+            {others.map(u => (
+              <div key={u.id} className={s.card}>
+                <Avatar user={u} size={52} online={onlineUsers.has(u.id)} />
                 <div className={s.cardName}>{u.name}</div>
                 {u.username && <div className={s.cardUsername}>@{u.username}</div>}
-                {u.bio && <div className={s.cardBio}>{u.bio}</div>}
-
-                {/* Call buttons */}
                 <div className={s.cardBtns}>
-                  <button
-                    className={`${s.callBtn} ${s.audioBtn} ${isCalling ? s.calling : ''}`}
+                  <button className={`${s.callBtn} ${s.audioBtn}`}
                     onClick={() => callUser(u, 'audio')}
-                    disabled={isCalling}
-                  >
-                    {isCalling ? '📲 Calling…' : '📞 Audio'}
+                    disabled={callingId === u.id}>
+                    📞 Audio
                   </button>
-                  <button
-                    className={`${s.callBtn} ${s.videoBtn} ${isCalling ? s.calling : ''}`}
+                  <button className={`${s.callBtn} ${s.videoBtn}`}
                     onClick={() => callUser(u, 'video')}
-                    disabled={isCalling}
-                  >
-                    📹 Video
+                    disabled={callingId === u.id}>
+                    📹
                   </button>
                 </div>
               </div>
-            )
-          })}
-        </div>
+            ))}
+          </div>
+        </section>
       )}
+    </div>
+  )
+}
+
+function FriendCallCard({ user: f, online, callingId, onCall }) {
+  const calling = callingId === f.id
+  return (
+    <div className={`${s.friendCard} ${online ? s.friendOnline : ''}`}>
+      <Avatar user={f} size={46} online={online} />
+      <div className={s.friendInfo}>
+        <div className={s.friendName}>{f.name}</div>
+        <div className={s.friendStatus}>
+          {online
+            ? <span className={s.onlineText}>🟢 Online now</span>
+            : <span className={s.offlineText}>⚫ Offline</span>
+          }
+        </div>
+      </div>
+      <div className={s.callBtns}>
+        <button
+          className={`${s.callIconBtn} ${s.audioCall} ${calling ? s.calling : ''}`}
+          onClick={() => onCall(f, 'audio')}
+          disabled={calling}
+          title="Audio call"
+        >
+          {calling ? '📲' : '📞'}
+        </button>
+        <button
+          className={`${s.callIconBtn} ${s.videoCall} ${calling ? s.calling : ''}`}
+          onClick={() => onCall(f, 'video')}
+          disabled={calling}
+          title="Video call"
+        >
+          📹
+        </button>
+      </div>
     </div>
   )
 }
