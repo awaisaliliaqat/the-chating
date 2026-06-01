@@ -75,3 +75,11 @@
 .cancelBtn { background:var(--bg-secondary); border:1px solid var(--border); color:var(--text-primary); padding:8px 16px; border-radius:8px; font-size:13px; }
 .submitBtn { background:var(--accent); color:#fff; border:none; padding:8px 20px; border-radius:8px; font-size:13px; font-weight:600; }
 .submitBtn:hover { background:var(--accent-hover); }
+
+@media (max-width: 768px) {
+  .page { flex-direction: column; }
+  .sidebar { width: 100%; min-width: unset; height: auto; border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+  .chat { flex: 1; min-height: 0; }
+  .emptyChat { padding: 30px 16px; }
+  .inputArea { padding: 10px 12px; }
+}

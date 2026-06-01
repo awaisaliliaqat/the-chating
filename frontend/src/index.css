@@ -37,6 +37,15 @@
 
 html, body, #root { height: 100%; }
 
+/* Mobile bottom nav height compensation */
+@media (max-width: 768px) {
+  :root { --bottom-nav-h: 60px; }
+  /* Hide desktop sidebar on mobile */
+  aside { display: none !important; }
+  /* Full-width main on mobile */
+  main  { padding-bottom: 60px !important; }
+}
+
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--bg-primary);

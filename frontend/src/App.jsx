@@ -1,20 +1,21 @@
 import { useContext } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AppContext } from './context/AppContext'
-import Sidebar    from './components/Sidebar'
-import CallModal  from './components/CallModal'
-import Toast      from './components/Toast'
-import Login      from './pages/Login'
-import Signup     from './pages/Signup'
-import Home       from './pages/Home'
-import Messages   from './pages/Messages'
-import Groups     from './pages/Groups'
-import Rooms      from './pages/Rooms'
-import Friends    from './pages/Friends'
-import Contacts   from './pages/Contacts'
-import Profile    from './pages/Profile'
-import Calls      from './pages/Calls'
-import AppSettings from './pages/AppSettings'
+import Sidebar       from './components/Sidebar'
+import BottomNav     from './components/BottomNav'
+import CallModal     from './components/CallModal'
+import Toast         from './components/Toast'
+import Login         from './pages/Login'
+import Signup        from './pages/Signup'
+import Home          from './pages/Home'
+import Messages      from './pages/Messages'
+import Groups        from './pages/Groups'
+import Rooms         from './pages/Rooms'
+import Friends       from './pages/Friends'
+import Contacts      from './pages/Contacts'
+import Profile       from './pages/Profile'
+import Calls         from './pages/Calls'
+import AppSettings   from './pages/AppSettings'
 import Admin         from './pages/Admin'
 import CallDirectory from './pages/CallDirectory'
 
@@ -22,9 +23,17 @@ function Layout({ children }) {
   return (
     <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
       <Sidebar />
-      <main style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+      <main style={{
+        flex: 1,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        /* bottom padding on mobile for the nav bar */
+        paddingBottom: 'var(--bottom-nav-h, 0px)',
+      }}>
         {children}
       </main>
+      <BottomNav />
     </div>
   )
 }

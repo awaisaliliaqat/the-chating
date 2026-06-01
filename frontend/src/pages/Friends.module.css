@@ -350,3 +350,19 @@
 .emptyEmoji { font-size: 52px; }
 .emptyTitle { font-size: 18px; font-weight: 700; color: var(--text-primary); }
 .emptySub   { font-size: 13px; color: var(--text-muted); max-width: 280px; }
+
+@media (max-width: 768px) {
+  .page     { padding: 16px 14px; gap: 14px; }
+  .pageHeader { flex-direction: column; align-items: flex-start; }
+  .tabBar   { flex-wrap: wrap; padding: 0 0 10px; background:none; border:none; }
+  .tabBtn   { flex: 1; min-width: 0; justify-content: center; font-size: 12px; padding: 7px 8px; }
+  .grid     { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .userCard { padding: 14px 10px 12px; }
+  .cardName { font-size: 13px; }
+  .friendRow { padding: 10px 12px; }
+  .reqCard   { padding: 10px 12px; flex-wrap: wrap; gap: 8px; }
+  .reqActions { width: 100%; justify-content: flex-end; }
+}
+@media (max-width: 420px) {
+  .grid { grid-template-columns: 1fr; }
+}

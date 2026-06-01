@@ -242,3 +242,10 @@
   width: 100%;
   text-align: left;
 }
+
+@media (max-width: 768px) {
+  .page { padding: 16px 14px; gap: 14px; }
+  .header { flex-wrap: wrap; gap: 10px; }
+  .search { width: 100%; }
+  .modal { padding: 20px 16px; }
+}
