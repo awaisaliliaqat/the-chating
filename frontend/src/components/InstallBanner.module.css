@@ -1,0 +1,157 @@
+.banner {
+  position: fixed;
+  bottom: 70px;
+  left: 12px;
+  right: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 8px 32px rgba(99,102,241,.25);
+  z-index: 800;
+  animation: slideUp .3s ease;
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (min-width: 769px) {
+  .banner {
+    bottom: 20px;
+    left: auto;
+    right: 20px;
+    width: 340px;
+  }
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.appIcon {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.info { overflow: hidden; }
+.title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
+.sub   { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+.actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.installBtn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.installBtn:hover { background: var(--accent-hover); }
+
+.dismissBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 6px;
+}
+.dismissBtn:hover { background: var(--bg-hover); }
+
+/* iOS guide overlay */
+.overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.7);
+  backdrop-filter: blur(8px);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 20px;
+}
+
+.guide {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 24px 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: var(--shadow);
+  animation: slideUp .25s ease;
+}
+
+.guideTitle {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.num {
+  background: var(--accent);
+  color: #fff;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.shareIcon {
+  font-size: 18px;
+  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.guideNote {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: center;
+  margin: 16px 0;
+}
+
+.closeGuide {
+  width: 100%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.closeGuide:hover { background: var(--accent-hover); }

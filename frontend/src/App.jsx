@@ -5,6 +5,7 @@ import Sidebar       from './components/Sidebar'
 import BottomNav     from './components/BottomNav'
 import CallModal     from './components/CallModal'
 import Toast         from './components/Toast'
+import InstallBanner from './components/InstallBanner'
 import Login         from './pages/Login'
 import Signup        from './pages/Signup'
 import Home          from './pages/Home'
@@ -55,6 +56,7 @@ export default function App() {
   return (
     <>
       <Toast />
+      <InstallBanner />
       {(incomingCall || activeCall) && <CallModal />}
       <Routes>
         <Route path="/login"  element={!user ? <Login  /> : <Navigate to="/" />} />

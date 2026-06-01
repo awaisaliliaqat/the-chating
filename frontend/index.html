@@ -3,12 +3,28 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- App icons -->
+    <link rel="icon"             href="/icons/icon-96.png" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icons/icon-192.png" />
+
+    <!-- iOS PWA full-screen support -->
+    <meta name="apple-mobile-web-app-capable"          content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="theme-color" content="#6366f1" />
+    <meta name="apple-mobile-web-app-title"            content="The Chating" />
+    <meta name="mobile-web-app-capable"                content="yes" />
+
+    <!-- Theme & branding -->
+    <meta name="theme-color"    content="#6366f1" />
+    <meta name="application-name" content="THE CHATING" />
+    <meta name="description"    content="Chat, call, and connect with friends" />
+
     <title>THE CHATING</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>" />
   </head>
   <body>
     <div id="root"></div>
