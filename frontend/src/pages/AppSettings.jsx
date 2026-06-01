@@ -6,7 +6,7 @@ const ACCENTS  = ['#6366f1','#ec4899','#f59e0b','#10b981','#3b82f6','#8b5cf6','#
 const WALLPAPERS = ['none','gradient1','gradient2','dots','lines','stars']
 
 export default function AppSettings() {
-  const { theme, toggleTheme, addToast } = useContext(AppContext)
+  const { theme, toggleTheme, addToast, subscribeToPush } = useContext(AppContext)
 
   const [prefs, setPrefs] = useState(() => {
     try { return JSON.parse(localStorage.getItem('s_prefs') || '{}') } catch { return {} }
@@ -89,6 +89,11 @@ export default function AppSettings() {
             </button>
             {prefs.soundEnabled && <button className={s.testBtn} onClick={testSound}>Test</button>}
           </div>
+        )},
+        { label: '📞 Offline Call Ringing', sub: 'Ring your phone even when app is closed — like WhatsApp. Tap Enable once!', action: (
+          <button className={`${s.toggleBtn} ${s.on}`} style={{minWidth:80}} onClick={() => subscribeToPush()}>
+            Enable
+          </button>
         )},
         { label: 'Push Notifications', sub: 'Get browser notifications when someone messages you', action: (
           <div className={s.row2}>

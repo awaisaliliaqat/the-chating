@@ -61,6 +61,14 @@ export function AppProvider({ children }) {
   const api = (path, opts = {}) =>
     axios({ url: `${API}${path}`, headers: { ...auth(), ...(opts.headers || {}) }, ...opts })
 
+  // Register service worker for push notifications
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .catch(() => {}) // silent fail
+    }
+  }, [])
+
   // Boot: restore session
   useEffect(() => {
     const token = localStorage.getItem('s_token')
@@ -369,11 +377,41 @@ export function AppProvider({ children }) {
   }
 
   // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Push notification subscription ───────────────────────────────────────
+  async function subscribeToPush() {
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        addToast('Push notifications not supported on this browser', 'error'); return false
+      }
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') {
+        addToast('Notification permission denied', 'error'); return false
+      }
+      const reg = await navigator.serviceWorker.ready
+      // Get VAPID public key from server
+      const keyResp = await axios.get(`${API}/push/vapid-key`)
+      const vapidKey = keyResp.data.publicKey
+      // Convert base64 to Uint8Array
+      const raw = atob(vapidKey.replace(/-/g,'+').replace(/_/g,'/').padEnd(vapidKey.length + (4 - vapidKey.length % 4) % 4, '='))
+      const uint8 = new Uint8Array(raw.length)
+      for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i)
+      // Subscribe
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: uint8 })
+      await api('/push/subscribe', { method: 'POST', data: sub.toJSON() })
+      addToast('✅ Call notifications enabled! You\'ll ring even when offline.', 'success')
+      return true
+    } catch(err) {
+      addToast('Failed to enable notifications: ' + (err.message || err), 'error'); return false
+    }
+  }
+
   async function login(email, password) {
     const r = await axios.post(`${API}/login`, { email, password })
     localStorage.setItem('s_token', r.data.token)
     const me = await axios.get(`${API}/me`, { headers: { Authorization: `Bearer ${r.data.token}` } })
     setUser(me.data); setupSocket(r.data.token)
+    // Auto-subscribe to push notifications for offline call ringing
+    setTimeout(() => subscribeToPush().catch(() => {}), 2000)
     return r.data
   }
 
@@ -382,6 +420,7 @@ export function AppProvider({ children }) {
     localStorage.setItem('s_token', r.data.token)
     const me = await axios.get(`${API}/me`, { headers: { Authorization: `Bearer ${r.data.token}` } })
     setUser(me.data); setupSocket(r.data.token)
+    setTimeout(() => subscribeToPush().catch(() => {}), 2000)
     return r.data
   }
 
@@ -397,7 +436,7 @@ export function AppProvider({ children }) {
       theme, toggleTheme: () => setTheme(t => t === 'dark' ? 'light' : 'dark'),
       toasts, addToast, removeToast,
       onlineUsers, availableUsers, badWordAlerts, setBadWordAlerts,
-      micBlocked, setMicBlocked,
+      micBlocked, setMicBlocked, subscribeToPush,
       incomingCall, activeCall,
       localStream, remoteStream,
       callDuration, isMuted, isCameraOff,

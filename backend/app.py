@@ -10,6 +10,38 @@ from dotenv import load_dotenv
 from database import get_db, init_db
 from bad_words import check_bad_words
 
+# ── Web Push ──────────────────────────────────────────────────────────────────
+VAPID_PUBLIC  = os.getenv("VAPID_PUBLIC", "")
+VAPID_EMAIL   = os.getenv("VAPID_EMAIL",  "mailto:admin@example.com")
+VAPID_PRIVATE = os.path.join(os.path.dirname(__file__), "vapid_private.pem")
+
+def send_push_to_user(user_id, title, body, data=None):
+    """Send a web push notification to all devices of a user."""
+    try:
+        from pywebpush import webpush, WebPushException
+        db = get_db()
+        subs = db.execute(
+            "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id=?",
+            (user_id,)
+        ).fetchall()
+        db.close()
+        payload = json.dumps({"title": title, "body": body, "data": data or {}})
+        for sub in subs:
+            try:
+                webpush(
+                    subscription_info={
+                        "endpoint": sub["endpoint"],
+                        "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]},
+                    },
+                    data=payload,
+                    vapid_private_key=VAPID_PRIVATE,
+                    vapid_claims={"sub": VAPID_EMAIL},
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
 load_dotenv()
 SECRET_KEY   = os.getenv("SECRET_KEY", "dev-secret")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001")
@@ -1040,9 +1072,27 @@ def on_call_offer(data):
     db.commit()
     call_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
     db.close()
-    emit("call_incoming",{"from":uid,"call_id":call_id,"offer":data.get("offer"),
-         "call_type":data.get("call_type","audio"),"caller_name":caller["name"],"caller_color":caller["avatar_color"]},
-         to=f"user_{to}")
+    call_payload = {
+        "from":uid,"call_id":call_id,"offer":data.get("offer"),
+        "call_type":data.get("call_type","audio"),
+        "caller_name":caller["name"],"caller_color":caller["avatar_color"]
+    }
+    emit("call_incoming", call_payload, to=f"user_{to}")
+
+    # Receiver is offline — send push notification so phone rings
+    if to not in user_sockets:
+        call_type_label = "📹 Video call" if data.get("call_type") == "video" else "📞 Audio call"
+        send_push_to_user(
+            to,
+            title=f"📞 {caller['name']} is calling you",
+            body=f"{call_type_label} — open THE CHATING to answer",
+            data={"type":"incoming_call","caller_id":uid,"caller_name":caller["name"],
+                  "call_type":data.get("call_type","audio"),"call_id":call_id}
+        )
+        # Also mark call as missed after 30s if still not answered
+        db = get_db()
+        db.execute("UPDATE calls SET status='missed' WHERE id=? AND status='initiated'",(call_id,))
+        db.commit(); db.close()
 
 @socketio.on("call_answer")
 def on_call_answer(data):
@@ -1074,6 +1124,44 @@ def on_ice_candidate(data):
     if not uid: return
     to=data.get("to")
     if to: emit("ice_candidate",{"from":uid,"candidate":data.get("candidate")},to=f"user_{to}")
+
+# ── Push Notifications ───────────────────────────────────────────────────────
+
+@app.route("/api/push/vapid-key", methods=["GET"])
+def push_vapid_key():
+    return jsonify({"publicKey": VAPID_PUBLIC}), 200
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def push_subscribe():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    endpoint = d.get("endpoint")
+    p256dh   = (d.get("keys") or {}).get("p256dh")
+    auth     = (d.get("keys") or {}).get("auth")
+    if not endpoint or not p256dh or not auth:
+        return jsonify({"message": "Invalid subscription."}), 400
+    db = get_db()
+    try:
+        db.execute(
+            "INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?,?,?,?)",
+            (uid, endpoint, p256dh, auth)
+        )
+        db.commit()
+    except Exception:
+        pass
+    db.close()
+    return jsonify({"message": "Subscribed."}), 201
+
+@app.route("/api/push/unsubscribe", methods=["DELETE"])
+def push_unsubscribe():
+    uid, err = require_auth()
+    if err: return err
+    endpoint = (request.json or {}).get("endpoint")
+    db = get_db()
+    db.execute("DELETE FROM push_subscriptions WHERE user_id=? AND endpoint=?", (uid, endpoint))
+    db.commit(); db.close()
+    return jsonify({"message": "Unsubscribed."}), 200
 
 # ── Admin (owner-only) ────────────────────────────────────────────────────────
 
