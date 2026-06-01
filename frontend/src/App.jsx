@@ -6,6 +6,7 @@ import BottomNav     from './components/BottomNav'
 import CallModal     from './components/CallModal'
 import Toast         from './components/Toast'
 import InstallBanner from './components/InstallBanner'
+import NotifSetup   from './components/NotifSetup'
 import Login         from './pages/Login'
 import Signup        from './pages/Signup'
 import Home          from './pages/Home'
@@ -56,6 +57,7 @@ export default function App() {
   return (
     <>
       <Toast />
+      {user && <NotifSetup />}
       <InstallBanner />
       {(incomingCall || activeCall) && <CallModal />}
       <Routes>
