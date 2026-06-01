@@ -99,7 +99,7 @@ export default function Admin() {
 
   // Load users
   useEffect(() => {
-    if (tab !== 'Users') return
+    if (tab !== '👤 Users') return
     setLoading(true)
     const q = search ? `&q=${encodeURIComponent(search)}` : ''
     api(`/admin/users?page=${page}&sort=${sort}&order=${order}${q}`)
@@ -110,7 +110,7 @@ export default function Admin() {
 
   // Load online users
   useEffect(() => {
-    if (tab !== 'Online') return
+    if (tab !== '🟢 Online') return
     api('/admin/online').then(r => setOnlineUsers(r.data)).catch(()=>{})
     const interval = setInterval(() => {
       api('/admin/online').then(r => setOnlineUsers(r.data)).catch(()=>{})
@@ -120,7 +120,7 @@ export default function Admin() {
 
   // Load messages
   useEffect(() => {
-    if (tab !== 'Messages') return
+    if (tab !== '💬 Messages') return
     setMsgsLoading(true)
     const q = msgsQ ? `&q=${encodeURIComponent(msgsQ)}` : ''
     api(`/admin/messages?page=${msgsPage}${q}`)

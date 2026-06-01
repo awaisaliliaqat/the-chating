@@ -14,7 +14,9 @@ load_dotenv()
 SECRET_KEY   = os.getenv("SECRET_KEY", "dev-secret")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3001")
 ADMIN_EMAILS = [e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "aariz123awais@gmail.com").split(",")]
-ALLOWED_ORIGINS = list({FRONTEND_URL, "http://localhost:3001"})
+_extra_origins = [o.strip() for o in os.getenv("EXTRA_ORIGINS", "").split(",") if o.strip()]
+ALLOWED_ORIGINS = list({FRONTEND_URL, "http://localhost:3001",
+                         "http://47.129.200.84", "https://47.129.200.84"} | set(_extra_origins))
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = SECRET_KEY
