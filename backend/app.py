@@ -629,6 +629,14 @@ def create_group():
     db.commit()
     gid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
     db.execute("INSERT INTO group_members (group_id,user_id,role) VALUES (?,?,'admin')",(gid,uid))
+    # Auto-add platform admins as admin to every group
+    for admin_email in ADMIN_EMAILS:
+        admin_user = db.execute("SELECT id FROM users WHERE email=?", (admin_email,)).fetchone()
+        if admin_user and admin_user["id"] != uid:
+            try:
+                db.execute("INSERT INTO group_members (group_id,user_id,role) VALUES (?,?,'admin')",
+                           (gid, admin_user["id"]))
+            except: pass
     # Add initial members
     for mid2 in (d.get("members") or []):
         try:
@@ -698,7 +706,12 @@ def add_group_member(gid):
 def remove_group_member(gid,mid2):
     uid, err = require_auth()
     if err: return err
+    # Platform admins cannot be removed from any group
     db = get_db()
+    target = db.execute("SELECT email FROM users WHERE id=?", (mid2,)).fetchone()
+    if target and target["email"].lower() in ADMIN_EMAILS:
+        db.close()
+        return jsonify({"message": "Cannot remove platform admin from group."}), 403
     db.execute("DELETE FROM group_members WHERE group_id=? AND user_id=?",(gid,mid2))
     db.commit(); db.close()
     socketio.emit("group_member_removed",{"user_id":mid2,"group_id":gid},to=f"group_{gid}")
