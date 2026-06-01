@@ -227,27 +227,30 @@ export function AppProvider({ children }) {
   function createPC(peerId) {
     const pc = new RTCPeerConnection({
       iceServers: [
-        // STUN servers (for same-network calls)
+        // STUN servers
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        // TURN servers (for cross-network calls — mobile data, different cities)
+        // OUR OWN TURN server — most reliable
+        {
+          urls: [
+            'turn:47.129.200.84:3478',
+            'turn:47.129.200.84:3478?transport=tcp',
+          ],
+          username:   'thechating',
+          credential: 'callswork2024',
+        },
+        // Backup public TURN servers
         {
           urls: [
             'turn:openrelay.metered.ca:80',
-            'turn:openrelay.metered.ca:443',
             'turn:openrelay.metered.ca:443?transport=tcp',
           ],
           username:   'openrelayproject',
           credential: 'openrelayproject',
         },
-        {
-          urls: 'turn:relay.metered.ca:80',
-          username:   'e8dd65bca5f418e05f3419ee',
-          credential: 'uBBCCrTUKltnBK6i',
-        },
       ],
       iceCandidatePoolSize: 10,
+      iceTransportPolicy: 'all',
     })
     pcRef.current = pc
     remoteDescSet.current = false
@@ -273,8 +276,20 @@ export function AppProvider({ children }) {
     }
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        cleanupCall(); addToast('Call connection lost', 'error')
+      console.log('Connection state:', pc.connectionState)
+      if (pc.connectionState === 'failed') {
+        // Try ICE restart before giving up
+        try { pc.restartIce() } catch { cleanupCall(); addToast('Call failed to connect', 'error') }
+      }
+      if (pc.connectionState === 'closed') {
+        cleanupCall()
+      }
+    }
+
+    pc.oniceconnectionstatechange = () => {
+      console.log('ICE state:', pc.iceConnectionState)
+      if (pc.iceConnectionState === 'failed') {
+        try { pc.restartIce() } catch { /* ignore */ }
       }
     }
 
