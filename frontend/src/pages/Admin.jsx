@@ -4,7 +4,7 @@ import { AppContext } from '../context/AppContext'
 import Avatar from '../components/Avatar'
 import s from './Admin.module.css'
 
-const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📋 Reports','📢 Broadcast','📊 Stats']
+const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📋 Reports','🏗️ Content','⚙️ System','📤 Export','⏰ Scheduled','🚫 Bans','⚠️ Warnings','🔍 Suspicious','📢 Broadcast','📊 Stats']
 
 const ADMIN_EMAILS = ['aariz123awais@gmail.com']
 const isAdmin = (email) => ADMIN_EMAILS.includes(email?.toLowerCase())
@@ -35,6 +35,22 @@ export default function Admin() {
   const [tab,      setTab]      = useState('🚨 Flagged')
   const [reports,      setReports]      = useState([])
   const [reportsLoading, setReportsLoading] = useState(false)
+  // New tabs state
+  const [content,      setContent]      = useState({posts:[],groups:[],rooms:[],stories:[]})
+  const [contentTab,   setContentTab]   = useState('posts')
+  const [sysSettings,  setSysSettings]  = useState(null)
+  const [health,       setHealth]       = useState(null)
+  const [badWords,     setBadWords]     = useState([])
+  const [newBadWord,   setNewBadWord]   = useState('')
+  const [bans,         setBans]         = useState([])
+  const [warnings,     setWarnings]     = useState([])
+  const [suspicious,   setSuspicious]   = useState([])
+  const [scheduled,    setScheduled]    = useState([])
+  const [dmTarget,     setDmTarget]     = useState(null)
+  const [dmMsg,        setDmMsg]        = useState('')
+  const [silenceHours, setSilenceHours] = useState(24)
+  const [newPwd,       setNewPwd]       = useState('')
+  const [selectedIds,  setSelectedIds]  = useState(new Set())
 
   // Flagged tab state
   const [flags,       setFlags]       = useState([])
@@ -138,6 +154,31 @@ export default function Admin() {
     api('/admin/reports').then(r => setReports(r.data)).catch(()=>{}).finally(()=>setReportsLoading(false))
   }, [tab]) // eslint-disable-line
 
+  // Load content
+  useEffect(() => {
+    if (tab !== '🏗️ Content') return
+    api('/admin/content/posts').then(r => setContent(p => ({...p,posts:r.data.posts||[]}))).catch(()=>{})
+    api('/admin/content/groups').then(r => setContent(p => ({...p,groups:r.data||[]}))).catch(()=>{})
+    api('/admin/content/rooms').then(r => setContent(p => ({...p,rooms:r.data||[]}))).catch(()=>{})
+    api('/admin/content/stories').then(r => setContent(p => ({...p,stories:r.data||[]}))).catch(()=>{})
+  }, [tab]) // eslint-disable-line
+
+  // Load system
+  useEffect(() => {
+    if (tab !== '⚙️ System') return
+    api('/admin/system/settings').then(r => setSysSettings(r.data)).catch(()=>{})
+    api('/admin/system/health').then(r => setHealth(r.data)).catch(()=>{})
+    api('/admin/system/bad-words').then(r => setBadWords(r.data.words||[])).catch(()=>{})
+  }, [tab]) // eslint-disable-line
+
+  // Load bans/warnings/suspicious/scheduled
+  useEffect(() => {
+    if (tab==='🚫 Bans')       api('/admin/bans').then(r=>setBans(r.data)).catch(()=>{})
+    if (tab==='⚠️ Warnings')   api('/admin/warnings').then(r=>setWarnings(r.data)).catch(()=>{})
+    if (tab==='🔍 Suspicious') api('/admin/suspicious').then(r=>setSuspicious(r.data)).catch(()=>{})
+    if (tab==='⏰ Scheduled')  api('/admin/scheduled').then(r=>setScheduled(r.data)).catch(()=>{})
+  }, [tab]) // eslint-disable-line
+
   async function warnUser(u) {
     const reason = window.prompt(`Warn ${u.name} — enter reason:`)
     if (!reason) return
@@ -155,6 +196,84 @@ export default function Admin() {
     await api(`/admin/reports/${rid}/resolve`, { method:'POST' })
     setReports(p => p.map(r => r.id===rid ? {...r, status:'resolved'} : r))
     addToast('Report resolved', 'success')
+  }
+
+  async function silenceUser(u) {
+    await api(`/admin/users/${u.id}/silence`, { method:'POST', data:{ hours:silenceHours } })
+    addToast(`${u.name} silenced for ${silenceHours}h`, 'success')
+  }
+
+  async function resetPassword(u) {
+    const pwd = window.prompt(`New password for ${u.name}:`, 'Reset123!')
+    if (!pwd) return
+    const r = await api(`/admin/users/${u.id}/reset-password`, { method:'POST', data:{ password:pwd } })
+    addToast(`Password reset to: ${r.data.new_password}`, 'success')
+  }
+
+  async function sendDM(u) { setDmTarget(u); setDmMsg('') }
+
+  async function confirmDM() {
+    if (!dmMsg.trim() || !dmTarget) return
+    await api(`/admin/users/${dmTarget.id}/dm`, { method:'POST', data:{ message: dmMsg } })
+    addToast(`Message sent to ${dmTarget.name}`, 'success')
+    setDmTarget(null)
+  }
+
+  async function giveAchievement(u) {
+    const key = window.prompt('Achievement key (e.g. early_adopter, popular):')
+    if (!key) return
+    await api(`/admin/users/${u.id}/give-achievement`, { method:'POST', data:{ key } })
+    addToast(`Achievement given to ${u.name}`, 'success')
+  }
+
+  async function addBadWord() {
+    if (!newBadWord.trim()) return
+    await api('/admin/system/bad-words', { method:'PUT', data:{ action:'add', word:newBadWord } })
+    setBadWords(p => [...p, newBadWord.toLowerCase()])
+    setNewBadWord('')
+    addToast(`"${newBadWord}" added`, 'success')
+  }
+
+  async function removeBadWord(word) {
+    await api('/admin/system/bad-words', { method:'PUT', data:{ action:'remove', word } })
+    setBadWords(p => p.filter(w => w !== word))
+  }
+
+  async function saveSetting(key, value) {
+    const r = await api('/admin/system/settings', { method:'PUT', data:{ [key]:value } })
+    setSysSettings(r.data)
+    addToast('Setting saved', 'success')
+  }
+
+  async function bulkBan() {
+    if (selectedIds.size === 0) return
+    const reason = window.prompt('Ban reason:')
+    if (!reason) return
+    await api('/admin/bulk/ban', { method:'POST', data:{ user_ids:[...selectedIds], reason } })
+    setUsers(p => p.map(u => selectedIds.has(u.id) ? {...u, is_banned:true} : u))
+    setSelectedIds(new Set())
+    addToast(`Banned ${selectedIds.size} users`, 'success')
+  }
+
+  async function exportCSV() {
+    const r = await api('/admin/export/users-csv', { responseType:'blob' })
+    const url = URL.createObjectURL(new Blob([r.data]))
+    const a = document.createElement('a'); a.href=url; a.download='users.csv'; a.click()
+    addToast('Users CSV downloaded', 'success')
+  }
+
+  async function exportBackup() {
+    const r = await api('/admin/export/full-backup', { responseType:'blob' })
+    const url = URL.createObjectURL(new Blob([r.data]))
+    const a = document.createElement('a'); a.href=url; a.download='backup.json'; a.click()
+    addToast('Full backup downloaded', 'success')
+  }
+
+  async function clearAllFlagged() {
+    if (!window.confirm('Mark ALL flagged messages as reviewed?')) return
+    await api('/admin/flagged/clear-all', { method:'POST' })
+    setFlags(p => p.map(f => ({...f, is_reviewed:1})))
+    addToast('All flagged cleared', 'success')
   }
 
   async function reviewFlag(fid) {
@@ -317,6 +436,7 @@ export default function Admin() {
           <div className={s.tableHeader}>
             <div className={s.tableTitle}>
               🚨 Bad Word Reports
+              <button className={`${s.actionBtn2} ${s.reviewBtn}`} style={{marginLeft:8}} onClick={clearAllFlagged}>✓ Clear All</button>
               <span className={s.totalBadge}>{flagsTotal}</span>
               {badWordAlerts.length > 0 && (
                 <span className={s.liveBadge}>🔴 {badWordAlerts.length} new</span>
@@ -480,7 +600,11 @@ export default function Admin() {
                           <button className={s.detailBtn} onClick={()=>openDetail(u)} title="View details">👁</button>
                           {!isAdmin(u.email) && (
                             <>
+                              <button className={`${s.actionBtn2}`} style={{background:'rgba(99,102,241,.1)',color:'var(--accent)'}} onClick={()=>sendDM(u)} title="DM user">✉️</button>
+                              <button className={`${s.actionBtn2}`} style={{background:'rgba(245,158,11,.1)',color:'var(--yellow)'}} onClick={()=>silenceUser(u)} title={`Silence ${silenceHours}h`}>🔇</button>
                               <button className={`${s.actionBtn2}`} style={{background:'rgba(245,158,11,.1)',color:'var(--yellow)'}} onClick={()=>warnUser(u)} title="Warn user">⚠️</button>
+                              <button className={`${s.actionBtn2}`} style={{background:'rgba(16,185,129,.1)',color:'var(--green)'}} onClick={()=>resetPassword(u)} title="Reset password">🔑</button>
+                              <button className={`${s.actionBtn2}`} style={{background:'var(--accent-soft)',color:'var(--accent)'}} onClick={()=>giveAchievement(u)} title="Give achievement">🏆</button>
                               <button className={`${s.actionBtn2}`} style={{background:u.is_verified?'var(--green-soft)':'var(--accent-soft)',color:u.is_verified?'var(--green)':'var(--accent)'}} onClick={()=>toggleVerify(u)} title={u.is_verified?'Remove verify':'Verify'}>
                                 {u.is_verified?'✓':'○'}
                               </button>
@@ -610,6 +734,279 @@ export default function Admin() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══ CONTENT TAB ══ */}
+      {tab==='🏗️ Content' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}>
+            <div className={s.tableTitle}>🏗️ Content Management</div>
+            <div style={{display:'flex',gap:6}}>
+              {['posts','groups','rooms','stories'].map(ct=>(
+                <button key={ct} className={`${s.pageBtn} ${contentTab===ct?s.pageActive:''}`} onClick={()=>setContentTab(ct)}>
+                  {ct==='posts'?'📸':ct==='groups'?'👥':ct==='rooms'?'🌐':'📖'} {ct}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              {contentTab==='posts' && <>
+                <thead><tr><th>User</th><th>Content</th><th>Likes</th><th>Comments</th><th>Date</th><th>Action</th></tr></thead>
+                <tbody>
+                  {content.posts.map(p=>(
+                    <tr key={p.id}>
+                      <td><div className={s.miniUser}><div className={s.miniDot} style={{background:'#6366f1'}}/>{p.user_name}</div></td>
+                      <td className={s.msgCell}>{p.image_b64?'📷 Image':p.content?.slice(0,60)||'—'}</td>
+                      <td>{p.like_count}</td><td>{p.comment_count}</td>
+                      <td className={s.dateCell}>{timeAgo(p.created_at)}</td>
+                      <td><button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={async()=>{await api(`/admin/content/posts/${p.id}`,{method:'DELETE'});setContent(prev=>({...prev,posts:prev.posts.filter(x=>x.id!==p.id)}))}}>🗑</button></td>
+                    </tr>
+                  ))}
+                  {content.posts.length===0&&<tr><td colSpan={6} className={s.noData}>No posts</td></tr>}
+                </tbody>
+              </>}
+              {contentTab==='groups' && <>
+                <thead><tr><th>Name</th><th>Owner</th><th>Members</th><th>Created</th><th>Action</th></tr></thead>
+                <tbody>
+                  {content.groups.map(g=>(
+                    <tr key={g.id}>
+                      <td style={{fontWeight:600}}>{g.name}</td>
+                      <td>{g.owner_name}</td><td>{g.member_count}</td>
+                      <td className={s.dateCell}>{timeAgo(g.created_at)}</td>
+                      <td><button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={async()=>{await api(`/admin/content/groups/${g.id}`,{method:'DELETE'});setContent(prev=>({...prev,groups:prev.groups.filter(x=>x.id!==g.id)}))}}>🗑 Delete</button></td>
+                    </tr>
+                  ))}
+                  {content.groups.length===0&&<tr><td colSpan={5} className={s.noData}>No groups</td></tr>}
+                </tbody>
+              </>}
+              {contentTab==='rooms' && <>
+                <thead><tr><th>Name</th><th>Category</th><th>Owner</th><th>Members</th><th>Action</th></tr></thead>
+                <tbody>
+                  {content.rooms.map(r=>(
+                    <tr key={r.id}>
+                      <td style={{fontWeight:600}}>{r.name}</td><td>{r.category}</td>
+                      <td>{r.owner_name}</td><td>{r.member_count}</td>
+                      <td><button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={async()=>{await api(`/admin/content/rooms/${r.id}`,{method:'DELETE'});setContent(prev=>({...prev,rooms:prev.rooms.filter(x=>x.id!==r.id)}))}}>🗑</button></td>
+                    </tr>
+                  ))}
+                  {content.rooms.length===0&&<tr><td colSpan={5} className={s.noData}>No rooms</td></tr>}
+                </tbody>
+              </>}
+              {contentTab==='stories' && <>
+                <thead><tr><th>User</th><th>Content</th><th>Type</th><th>Expires</th><th>Action</th></tr></thead>
+                <tbody>
+                  {content.stories.map(st=>(
+                    <tr key={st.id}>
+                      <td>{st.user_name}</td>
+                      <td className={s.msgCell}>{st.type==='image'?'📷 Image':st.content?.slice(0,40)||'—'}</td>
+                      <td><span className={s.msgType}>{st.type}</span></td>
+                      <td className={s.dateCell}>{new Date(st.expires_at).toLocaleDateString()}</td>
+                      <td><button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={async()=>{await api(`/admin/content/stories/${st.id}`,{method:'DELETE'});setContent(prev=>({...prev,stories:prev.stories.filter(x=>x.id!==st.id)}))}}>🗑</button></td>
+                    </tr>
+                  ))}
+                  {content.stories.length===0&&<tr><td colSpan={5} className={s.noData}>No stories</td></tr>}
+                </tbody>
+              </>}
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ SYSTEM TAB ══ */}
+      {tab==='⚙️ System' && (
+        <div style={{display:'flex',flexDirection:'column',gap:16}}>
+          {/* Health */}
+          {health && (
+            <div className={s.tableCard}>
+              <div className={s.tableHeader}><div className={s.tableTitle}>🖥️ Server Health</div><div className={`${s.liveBadge}`}>Live</div></div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12,padding:16}}>
+                {[
+                  {l:'Status',    v:health.status,               c:'var(--green)'},
+                  {l:'Online',    v:health.online_users,         c:'var(--accent)'},
+                  {l:'Disk Used', v:`${health.disk_pct}%`,       c:health.disk_pct>80?'var(--red)':'var(--green)'},
+                  {l:'DB Size',   v:`${health.db_size_mb}MB`,    c:'var(--text-primary)'},
+                ].map(({l,v,c})=>(
+                  <div key={l} className={s.statCard} style={{padding:12,textAlign:'center'}}>
+                    <div className={s.statVal} style={{color:c,fontSize:18}}>{v}</div>
+                    <div className={s.statLabel}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Settings */}
+          {sysSettings && (
+            <div className={s.tableCard}>
+              <div className={s.tableHeader}><div className={s.tableTitle}>⚙️ App Settings</div></div>
+              <div style={{padding:16,display:'flex',flexDirection:'column',gap:10}}>
+                {[
+                  {key:'app_name',           label:'App Name',             type:'text'},
+                  {key:'welcome_message',    label:'Welcome Message',      type:'text'},
+                  {key:'allow_registration', label:'Allow Registration',   type:'bool'},
+                  {key:'allow_calls',        label:'Enable Calls',         type:'bool'},
+                  {key:'allow_groups',       label:'Enable Groups',        type:'bool'},
+                  {key:'allow_stories',      label:'Enable Stories',       type:'bool'},
+                  {key:'allow_rooms',        label:'Enable Rooms',         type:'bool'},
+                  {key:'allow_gifs',         label:'Enable GIFs',          type:'bool'},
+                  {key:'allow_file_sharing', label:'Enable File Sharing',  type:'bool'},
+                  {key:'allow_voice_msgs',   label:'Enable Voice Messages',type:'bool'},
+                  {key:'max_message_length', label:'Max Message Length',   type:'number'},
+                  {key:'max_group_members',  label:'Max Group Members',    type:'number'},
+                  {key:'auto_ban_threshold', label:'Auto-ban Threshold',   type:'number'},
+                ].map(({key,label,type})=>(
+                  <div key={key} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+                    <span style={{fontSize:14,fontWeight:600,color:'var(--text-primary)'}}>{label}</span>
+                    {type==='bool'
+                      ? <button className={`${s.actionBtn2} ${sysSettings[key]?s.unbanBtn:s.banBtn}`} onClick={()=>saveSetting(key,!sysSettings[key])}>
+                          {sysSettings[key]?'✓ On':'✕ Off'}
+                        </button>
+                      : <input style={{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'5px 10px',fontSize:13,color:'var(--text-primary)',width:160}}
+                          defaultValue={sysSettings[key]}
+                          onBlur={e=>saveSetting(key,type==='number'?parseInt(e.target.value):e.target.value)} />
+                    }
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Bad Words */}
+          <div className={s.tableCard}>
+            <div className={s.tableHeader}>
+              <div className={s.tableTitle}>🤬 Bad Words <span className={s.totalBadge}>{badWords.length}</span></div>
+            </div>
+            <div style={{padding:16}}>
+              <div style={{display:'flex',gap:8,marginBottom:12}}>
+                <input className={s.searchInput} style={{flex:1}} placeholder="Add a new bad word..." value={newBadWord} onChange={e=>setNewBadWord(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addBadWord()} />
+                <button className={`${s.actionBtn2} ${s.unbanBtn}`} onClick={addBadWord}>+ Add</button>
+              </div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:6,maxHeight:200,overflowY:'auto'}}>
+                {badWords.map(w=>(
+                  <span key={w} style={{background:'var(--red-soft)',color:'var(--red)',padding:'3px 8px 3px 10px',borderRadius:12,fontSize:12,display:'flex',alignItems:'center',gap:5}}>
+                    {w}
+                    <button onClick={()=>removeBadWord(w)} style={{background:'none',border:'none',color:'var(--red)',fontSize:14,lineHeight:1,cursor:'pointer'}}>✕</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ EXPORT TAB ══ */}
+      {tab==='📤 Export' && (
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:14}}>
+          {[
+            {icon:'👥',title:'Users CSV',desc:'Export all users with email, status, join date',fn:exportCSV,btn:'⬇ Download CSV'},
+            {icon:'💾',title:'Full Backup',desc:'Complete backup: users, groups, rooms, reports',fn:exportBackup,btn:'⬇ Download JSON'},
+            {icon:'🔍',title:'Stats Export',desc:'Analytics data for the last 30 days',fn:()=>api('/admin/analytics/detailed').then(r=>{const b=new Blob([JSON.stringify(r.data,null,2)]);const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='analytics.json';a.click()}),btn:'⬇ Analytics'},
+          ].map(({icon,title,desc,fn,btn})=>(
+            <div key={title} className={s.tableCard} style={{padding:20}}>
+              <div style={{fontSize:28,marginBottom:8}}>{icon}</div>
+              <div style={{fontSize:15,fontWeight:700,color:'var(--text-primary)',marginBottom:4}}>{title}</div>
+              <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:12}}>{desc}</div>
+              <button className={s.saveBtn} style={{margin:0,width:'100%'}} onClick={fn}>{btn}</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ══ SCHEDULED TAB ══ */}
+      {tab==='⏰ Scheduled' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>⏰ Scheduled Messages <span className={s.totalBadge}>{scheduled.length}</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>From</th><th>To</th><th>Content</th><th>Send At</th><th>Action</th></tr></thead>
+              <tbody>
+                {scheduled.map(m=>(
+                  <tr key={m.id}>
+                    <td>{m.sender_name}</td>
+                    <td>{m.receiver_id||`Group ${m.group_id}`}</td>
+                    <td className={s.msgCell}>{m.content}</td>
+                    <td className={s.dateCell}>{new Date(m.send_at).toLocaleString()}</td>
+                    <td><button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={async()=>{await api(`/admin/scheduled/${m.id}`,{method:'DELETE'});setScheduled(p=>p.filter(x=>x.id!==m.id))}}>✕ Cancel</button></td>
+                  </tr>
+                ))}
+                {scheduled.length===0&&<tr><td colSpan={5} className={s.noData}>No scheduled messages</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ BANS TAB ══ */}
+      {tab==='🚫 Bans' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>🚫 Banned Users <span className={s.totalBadge}>{bans.length}</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>User</th><th>Reason</th><th>Banned</th><th>Action</th></tr></thead>
+              <tbody>
+                {bans.map(u=>(
+                  <tr key={u.id} className={s.bannedRow}>
+                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
+                    <td className={s.msgCell}>{u.ban_reason||'—'}</td>
+                    <td className={s.dateCell}>{timeAgo(u.banned_at)}</td>
+                    <td><button className={`${s.actionBtn2} ${s.unbanBtn}`} onClick={()=>handleUnban(u)}>✅ Unban</button></td>
+                  </tr>
+                ))}
+                {bans.length===0&&<tr><td colSpan={4} className={s.noData}>No banned users 🎉</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ WARNINGS TAB ══ */}
+      {tab==='⚠️ Warnings' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>⚠️ All Warnings <span className={s.totalBadge}>{warnings.length}</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>User</th><th>Reason</th><th>By Admin</th><th>Date</th></tr></thead>
+              <tbody>
+                {warnings.map((w,i)=>(
+                  <tr key={i}>
+                    <td><div className={s.miniUser}><div className={s.miniDot} style={{background:'#f59e0b'}}/>{w.user_name}</div></td>
+                    <td className={s.msgCell}>{w.reason}</td>
+                    <td style={{fontSize:12,color:'var(--text-muted)'}}>{w.admin_name}</td>
+                    <td className={s.dateCell}>{timeAgo(w.created_at)}</td>
+                  </tr>
+                ))}
+                {warnings.length===0&&<tr><td colSpan={4} className={s.noData}>No warnings issued</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ SUSPICIOUS TAB ══ */}
+      {tab==='🔍 Suspicious' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>🔍 Suspicious Activity (last 1 hour)</div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>User</th><th>Messages in 1h</th><th>Status</th><th>Actions</th></tr></thead>
+              <tbody>
+                {suspicious.map(u=>(
+                  <tr key={u.id}>
+                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
+                    <td><span style={{fontSize:20,fontWeight:800,color:'var(--red)'}}>{u.msg_count_1h}</span></td>
+                    <td><span className={`${s.badge} ${u.is_online_live?s.badgeGreen:s.badgeGray}`}>{u.is_online_live?'Online':'Offline'}</span></td>
+                    <td><div className={s.actionCell}>
+                      <button className={`${s.actionBtn2} ${s.banBtn}`} onClick={()=>handleBan(u)}>🚫 Ban</button>
+                      <button className={`${s.actionBtn2} ${s.kickBtn}`} onClick={()=>handleKick(u)}>⚡ Kick</button>
+                    </div></td>
+                  </tr>
+                ))}
+                {suspicious.length===0&&<tr><td colSpan={4} className={s.noData}>No suspicious activity detected ✅</td></tr>}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -770,6 +1167,24 @@ export default function Admin() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ══ DM MODAL ══ */}
+      {dmTarget && (
+        <div className={s.overlay} onClick={()=>setDmTarget(null)}>
+          <div className={s.banModal} onClick={e=>e.stopPropagation()} style={{borderColor:'var(--accent)'}}>
+            <h3 className={s.banModalTitle} style={{color:'var(--accent)'}}>✉️ Message {dmTarget.name}</h3>
+            <div className={s.banUser} style={{background:'var(--accent-soft)'}}>
+              <div className={s.banUserName}>{dmTarget.name}</div>
+              <div className={s.banUserEmail}>{dmTarget.email}</div>
+            </div>
+            <textarea className={s.banInput} placeholder="Type your message..." value={dmMsg} onChange={e=>setDmMsg(e.target.value)} rows={3} autoFocus />
+            <div className={s.banBtns}>
+              <button className={s.cancelBtn} onClick={()=>setDmTarget(null)}>Cancel</button>
+              <button className={s.confirmBanBtn} style={{background:'var(--accent)'}} onClick={confirmDM}>Send ✉️</button>
+            </div>
           </div>
         </div>
       )}
