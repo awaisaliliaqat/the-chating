@@ -11,9 +11,29 @@ from database import get_db, init_db
 from bad_words import check_bad_words
 
 # ── Web Push ──────────────────────────────────────────────────────────────────
-VAPID_PUBLIC  = os.getenv("VAPID_PUBLIC", "")
-VAPID_EMAIL   = os.getenv("VAPID_EMAIL",  "mailto:admin@example.com")
+# VAPID keys for Web Push Notifications
+# Public key is safe to expose; private key stays on server as vapid_private.pem
+VAPID_EMAIL   = os.getenv("VAPID_EMAIL", "mailto:aariz123awais@gmail.com")
 VAPID_PRIVATE = os.path.join(os.path.dirname(__file__), "vapid_private.pem")
+
+def _get_vapid_public():
+    """Read public key from private key file so it's always accurate."""
+    try:
+        from py_vapid import Vapid
+        import base64
+        v = Vapid.from_file(VAPID_PRIVATE)
+        pub_bytes = v.public_key.public_bytes(
+            __import__('cryptography.hazmat.primitives.serialization',
+                       fromlist=['Encoding','PublicFormat']).Encoding.X962,
+            __import__('cryptography.hazmat.primitives.serialization',
+                       fromlist=['Encoding','PublicFormat']).PublicFormat.UncompressedPoint
+        )
+        return base64.urlsafe_b64encode(pub_bytes).rstrip(b'=').decode()
+    except Exception as e:
+        # Fallback to env variable
+        return os.getenv("VAPID_PUBLIC", "")
+
+VAPID_PUBLIC = _get_vapid_public()
 
 def send_push_to_user(user_id, title, body, data=None):
     """Send a web push notification to all devices of a user."""
