@@ -1,47 +1,56 @@
 .nav {
-  display: none; /* hidden on desktop */
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  height: 60px;
-  background: var(--bg-secondary);
-  border-top: 1px solid var(--border);
-  z-index: 1000;
-  flex-direction: row;
-  align-items: stretch;
-  padding-bottom: env(safe-area-inset-bottom);
+  display: none;
 }
 
 @media (max-width: 768px) {
-  .nav { display: flex; }
+  .nav {
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    height: 60px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    z-index: 1000;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    padding-bottom: env(safe-area-inset-bottom);
+    gap: 0;
+  }
+  .nav::-webkit-scrollbar { display: none; }
 }
 
 .item {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  min-width: 58px;
+  padding: 6px 4px 4px;
   color: var(--text-muted);
   text-decoration: none;
-  padding: 6px 4px;
   transition: color .15s;
-  position: relative;
+  flex-shrink: 0;
 }
 .item:hover  { color: var(--text-primary); }
 .item.active { color: var(--accent); }
+.item.active .icon { transform: scale(1.1); }
 
 .iconWrap {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .icon  { font-size: 20px; line-height: 1; }
-.label { font-size: 10px; font-weight: 600; }
+.label { font-size: 9px; font-weight: 600; text-align: center; white-space: nowrap; }
 
 .badge {
   position: absolute;
-  top: -4px; right: -6px;
+  top: -4px; right: -8px;
   background: var(--accent);
   color: #fff;
   font-size: 9px;
@@ -51,4 +60,5 @@
   min-width: 14px;
   text-align: center;
   border: 1px solid var(--bg-secondary);
+  line-height: 1.4;
 }
