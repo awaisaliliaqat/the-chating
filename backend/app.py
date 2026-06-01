@@ -3072,6 +3072,292 @@ def suspicious_activity():
     db.close()
     return jsonify([{**user_dict(r),"msg_count_1h":r["msg_count_1h"]} for r in rows]),200
 
+# ── More Admin Features ───────────────────────────────────────────────────────
+
+# Admin Activity Log (in-memory, last 200 actions)
+admin_log = []
+
+def log_admin_action(admin_id, action, details=""):
+    admin_log.append({
+        "admin_id": admin_id,
+        "action":   action,
+        "details":  details,
+        "at":       datetime.datetime.utcnow().isoformat(),
+    })
+    if len(admin_log) > 200:
+        admin_log.pop(0)
+
+@app.route("/api/admin/activity-log", methods=["GET"])
+def admin_activity_log():
+    uid, err = require_admin()
+    if err: return err
+    return jsonify(list(reversed(admin_log[-50:]))), 200
+
+# ── Announcement System ───────────────────────────────────────────────────────
+_announcements = []
+
+@app.route("/api/admin/announcements", methods=["GET","POST","DELETE"])
+def announcements():
+    uid, err = require_admin()
+    if err: return err
+    if request.method == "GET":
+        return jsonify(_announcements), 200
+    if request.method == "POST":
+        d = request.json or {}
+        ann = {
+            "id":        len(_announcements)+1,
+            "title":     d.get("title",""),
+            "message":   d.get("message",""),
+            "type":      d.get("type","info"),  # info/warning/success/error
+            "created_at": datetime.datetime.utcnow().isoformat(),
+            "active":    True,
+        }
+        _announcements.append(ann)
+        # Push to all online users
+        socketio.emit("announcement", ann)
+        log_admin_action(uid, "ANNOUNCEMENT", f"Created: {ann['title']}")
+        return jsonify(ann), 201
+    ann_id = (request.json or {}).get("id")
+    for a in _announcements:
+        if a["id"] == ann_id: a["active"] = False
+    return jsonify({"message":"Deactivated."}), 200
+
+@app.route("/api/announcements/active", methods=["GET"])
+def active_announcements():
+    return jsonify([a for a in _announcements if a.get("active")]), 200
+
+# ── Maintenance Mode ──────────────────────────────────────────────────────────
+_maintenance = {"enabled": False, "message": "App is under maintenance. Back soon!"}
+
+@app.route("/api/admin/maintenance", methods=["GET","PUT"])
+def maintenance_mode():
+    uid, err = require_admin()
+    if err: return err
+    if request.method == "GET":
+        return jsonify(_maintenance), 200
+    d = request.json or {}
+    _maintenance["enabled"] = bool(d.get("enabled", False))
+    _maintenance["message"]  = d.get("message", _maintenance["message"])
+    if _maintenance["enabled"]:
+        socketio.emit("maintenance_mode", {"message": _maintenance["message"]})
+        log_admin_action(uid, "MAINTENANCE", "Enabled maintenance mode")
+    return jsonify(_maintenance), 200
+
+@app.route("/api/maintenance-status", methods=["GET"])
+def maintenance_status():
+    return jsonify(_maintenance), 200
+
+# ── IP Block List ─────────────────────────────────────────────────────────────
+_blocked_ips = set()
+
+@app.route("/api/admin/ip-blocks", methods=["GET","POST","DELETE"])
+def ip_blocks():
+    uid, err = require_admin()
+    if err: return err
+    if request.method == "GET":
+        return jsonify({"blocked_ips": list(_blocked_ips)}), 200
+    ip = (request.json or {}).get("ip","").strip()
+    if not ip: return jsonify({"message":"IP required."}), 400
+    if request.method == "POST":
+        _blocked_ips.add(ip)
+        log_admin_action(uid, "IP_BLOCK", f"Blocked IP: {ip}")
+        return jsonify({"message":f"IP {ip} blocked."}), 200
+    _blocked_ips.discard(ip)
+    return jsonify({"message":f"IP {ip} unblocked."}), 200
+
+# ── Achievement Leaderboard ───────────────────────────────────────────────────
+@app.route("/api/admin/leaderboard/achievements", methods=["GET"])
+def achievement_leaderboard():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT u.id, u.name, u.email, u.avatar_color, u.is_verified,
+               COUNT(ua.achievement_key) as achievement_count
+        FROM users u LEFT JOIN user_achievements ua ON u.id=ua.user_id
+        GROUP BY u.id ORDER BY achievement_count DESC LIMIT 20
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+@app.route("/api/admin/leaderboard/messages", methods=["GET"])
+def message_leaderboard():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT u.id, u.name, u.email, u.avatar_color,
+               COUNT(m.id) as msg_count
+        FROM users u LEFT JOIN messages m ON u.id=m.sender_id AND m.deleted_at IS NULL
+        GROUP BY u.id ORDER BY msg_count DESC LIMIT 20
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+# ── Call Analytics ────────────────────────────────────────────────────────────
+@app.route("/api/admin/analytics/calls", methods=["GET"])
+def call_analytics():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    total  = db.execute("SELECT COUNT(*) as c FROM calls").fetchone()["c"]
+    answered = db.execute("SELECT COUNT(*) as c FROM calls WHERE status='answered'").fetchone()["c"]
+    missed = db.execute("SELECT COUNT(*) as c FROM calls WHERE status='missed'").fetchone()["c"]
+    avg_dur = db.execute("SELECT AVG(duration) as a FROM calls WHERE status='answered' AND duration>0").fetchone()["a"]
+    audio  = db.execute("SELECT COUNT(*) as c FROM calls WHERE call_type='audio'").fetchone()["c"]
+    video  = db.execute("SELECT COUNT(*) as c FROM calls WHERE call_type='video'").fetchone()["c"]
+    # Calls per day last 7 days
+    days = []
+    now = datetime.datetime.utcnow()
+    for i in range(6,-1,-1):
+        ds = (now - datetime.timedelta(days=i)).replace(hour=0,minute=0,second=0).isoformat()
+        de = (now - datetime.timedelta(days=i-1)).replace(hour=0,minute=0,second=0).isoformat() if i > 0 else now.isoformat()
+        c = db.execute("SELECT COUNT(*) as c FROM calls WHERE created_at>=? AND created_at<?", (ds,de)).fetchone()["c"]
+        days.append({"day":(now-datetime.timedelta(days=i)).strftime("%a"), "count":c})
+    db.close()
+    return jsonify({
+        "total": total, "answered": answered, "missed": missed,
+        "avg_duration_sec": round(avg_dur or 0, 1),
+        "audio_calls": audio, "video_calls": video,
+        "days": days,
+    }), 200
+
+# ── Block Relationships ───────────────────────────────────────────────────────
+@app.route("/api/admin/blocks", methods=["GET"])
+def admin_blocks():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT b.*, a.name as blocker_name, c.name as blocked_name
+        FROM blocks b JOIN users a ON b.blocker_id=a.id JOIN users c ON b.blocked_id=c.id
+        ORDER BY b.created_at DESC LIMIT 100
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+# ── Gift History ──────────────────────────────────────────────────────────────
+@app.route("/api/admin/gifts", methods=["GET"])
+def admin_gifts():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT g.*, a.name as sender_name, b.name as receiver_name
+        FROM virtual_gifts g JOIN users a ON g.sender_id=a.id JOIN users b ON g.receiver_id=b.id
+        ORDER BY g.created_at DESC LIMIT 100
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+# ── Top Posts ─────────────────────────────────────────────────────────────────
+@app.route("/api/admin/top-posts", methods=["GET"])
+def admin_top_posts():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT p.*, u.name as user_name,
+               COUNT(pl.id) as like_count,
+               (SELECT COUNT(*) FROM post_comments WHERE post_id=p.id) as comment_count
+        FROM posts p JOIN users u ON p.user_id=u.id
+        LEFT JOIN post_likes pl ON p.id=pl.post_id
+        GROUP BY p.id ORDER BY like_count DESC LIMIT 20
+    ''').fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+# ── User Tags ─────────────────────────────────────────────────────────────────
+_user_tags = {}  # user_id -> [tags]
+
+@app.route("/api/admin/users/<int:tid>/tags", methods=["GET","POST","DELETE"])
+def user_tags(tid):
+    uid, err = require_admin()
+    if err: return err
+    if request.method == "GET":
+        return jsonify({"tags": _user_tags.get(tid, [])}), 200
+    tag = (request.json or {}).get("tag","").strip()
+    if not tag: return jsonify({"message":"Tag required."}), 400
+    if request.method == "POST":
+        if tid not in _user_tags: _user_tags[tid] = []
+        if tag not in _user_tags[tid]: _user_tags[tid].append(tag)
+        return jsonify({"tags": _user_tags[tid]}), 200
+    if tid in _user_tags and tag in _user_tags[tid]: _user_tags[tid].remove(tag)
+    return jsonify({"tags": _user_tags.get(tid,[])}), 200
+
+# ── Platform Statistics (extended) ───────────────────────────────────────────
+@app.route("/api/admin/platform-stats", methods=["GET"])
+def platform_stats():
+    uid, err = require_admin()
+    if err: return err
+    db = get_db()
+    now = datetime.datetime.utcnow()
+    day_ago   = (now - datetime.timedelta(days=1)).isoformat()
+    week_ago  = (now - datetime.timedelta(days=7)).isoformat()
+    month_ago = (now - datetime.timedelta(days=30)).isoformat()
+
+    result = {
+        "users": {
+            "total":          db.execute("SELECT COUNT(*) as c FROM users").fetchone()["c"],
+            "active_today":   db.execute("SELECT COUNT(*) as c FROM messages WHERE sender_id IN (SELECT DISTINCT sender_id FROM messages WHERE created_at>=?)",(day_ago,)).fetchone()["c"],
+            "active_week":    db.execute("SELECT COUNT(DISTINCT sender_id) as c FROM messages WHERE created_at>=?",(week_ago,)).fetchone()["c"],
+            "banned":         db.execute("SELECT COUNT(*) as c FROM users WHERE is_banned=1").fetchone()["c"],
+            "verified":       db.execute("SELECT COUNT(*) as c FROM users WHERE is_verified=1").fetchone()["c"],
+        },
+        "messages": {
+            "total":         db.execute("SELECT COUNT(*) as c FROM messages WHERE deleted_at IS NULL").fetchone()["c"],
+            "today":         db.execute("SELECT COUNT(*) as c FROM messages WHERE created_at>=? AND deleted_at IS NULL",(day_ago,)).fetchone()["c"],
+            "this_week":     db.execute("SELECT COUNT(*) as c FROM messages WHERE created_at>=? AND deleted_at IS NULL",(week_ago,)).fetchone()["c"],
+        },
+        "groups":    {"total": db.execute("SELECT COUNT(*) as c FROM groups").fetchone()["c"]},
+        "rooms":     {"total": db.execute("SELECT COUNT(*) as c FROM rooms").fetchone()["c"]},
+        "posts":     {"total": db.execute("SELECT COUNT(*) as c FROM posts").fetchone()["c"]},
+        "calls":     {"total": db.execute("SELECT COUNT(*) as c FROM calls").fetchone()["c"]},
+        "stories":   {"total": db.execute("SELECT COUNT(*) as c FROM stories").fetchone()["c"]},
+        "events":    {"total": db.execute("SELECT COUNT(*) as c FROM events").fetchone()["c"]},
+        "reports":   {
+            "total":    db.execute("SELECT COUNT(*) as c FROM reports").fetchone()["c"],
+            "pending":  db.execute("SELECT COUNT(*) as c FROM reports WHERE status='pending'").fetchone()["c"],
+        },
+        "flagged":   {
+            "total":    db.execute("SELECT COUNT(*) as c FROM flagged_messages").fetchone()["c"],
+            "unreviewed": db.execute("SELECT COUNT(*) as c FROM flagged_messages WHERE is_reviewed=0").fetchone()["c"],
+        },
+    }
+    db.close()
+    return jsonify(result), 200
+
+# ── Force Logout All Sessions ─────────────────────────────────────────────────
+@app.route("/api/admin/users/<int:tid>/logout-all", methods=["POST"])
+def logout_all_sessions(tid):
+    uid, err = require_admin()
+    if err: return err
+    if tid in user_sockets:
+        for sid in list(user_sockets[tid]):
+            socketio.emit("force_logout", {"reason": "All sessions were logged out by admin."}, to=sid)
+        user_sockets.pop(tid, None)
+    log_admin_action(uid, "LOGOUT_ALL", f"Force-logged out user {tid}")
+    return jsonify({"message": "All sessions terminated."}), 200
+
+# ── Custom Badge (assign achievement manually from admin) ─────────────────────
+@app.route("/api/admin/achievements/create", methods=["POST"])
+def create_achievement():
+    uid, err = require_admin()
+    if err: return err
+    d = request.json or {}
+    key  = (d.get("key") or "").strip()
+    name = (d.get("name") or "").strip()
+    desc = (d.get("description") or "").strip()
+    icon = d.get("icon","🏅")
+    if not key or not name: return jsonify({"message":"key and name required."}), 400
+    db = get_db()
+    try:
+        db.execute("INSERT OR IGNORE INTO achievements (key,name,description,icon) VALUES (?,?,?,?)",(key,name,desc,icon))
+        db.commit()
+    except Exception: pass
+    db.close()
+    return jsonify({"message":f"Achievement '{name}' created."}), 201
+
 if __name__ == "__main__":
     port  = int(os.getenv("PORT",5001))
     debug = os.getenv("FLASK_ENV","development") != "production"

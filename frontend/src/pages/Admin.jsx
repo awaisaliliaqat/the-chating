@@ -4,7 +4,7 @@ import { AppContext } from '../context/AppContext'
 import Avatar from '../components/Avatar'
 import s from './Admin.module.css'
 
-const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📋 Reports','🏗️ Content','⚙️ System','📤 Export','⏰ Scheduled','🚫 Bans','⚠️ Warnings','🔍 Suspicious','📢 Broadcast','📊 Stats']
+const TABS = ['🚨 Flagged','👤 Users','🟢 Online','💬 Messages','📋 Reports','🏗️ Content','⚙️ System','📤 Export','⏰ Scheduled','🚫 Bans','⚠️ Warnings','🔍 Suspicious','📢 Broadcast','📣 Announcements','🔧 Maintenance','🌐 IP Block','🏆 Leaderboard','📞 Call Stats','🎁 Gifts','💝 Blocks','📊 Platform','🪪 Activity Log','📊 Stats']
 
 const ADMIN_EMAILS = ['aariz123awais@gmail.com']
 const isAdmin = (email) => ADMIN_EMAILS.includes(email?.toLowerCase())
@@ -51,6 +51,18 @@ export default function Admin() {
   const [silenceHours, setSilenceHours] = useState(24)
   const [newPwd,       setNewPwd]       = useState('')
   const [selectedIds,  setSelectedIds]  = useState(new Set())
+  // New tabs
+  const [announcements, setAnnouncements] = useState([])
+  const [annForm,  setAnnForm]   = useState({title:'',message:'',type:'info'})
+  const [maintenance, setMaintenance] = useState({enabled:false,message:''})
+  const [blockedIPs,  setBlockedIPs]  = useState([])
+  const [newIP,       setNewIP]       = useState('')
+  const [leaderboard, setLeaderboard] = useState({achievements:[],messages:[]})
+  const [callStats,   setCallStats]   = useState(null)
+  const [gifts,       setGifts]       = useState([])
+  const [blockRels,   setBlockRels]   = useState([])
+  const [platStats,   setPlatStats]   = useState(null)
+  const [activityLog, setActivityLog] = useState([])
 
   // Flagged tab state
   const [flags,       setFlags]       = useState([])
@@ -169,6 +181,22 @@ export default function Admin() {
     api('/admin/system/settings').then(r => setSysSettings(r.data)).catch(()=>{})
     api('/admin/system/health').then(r => setHealth(r.data)).catch(()=>{})
     api('/admin/system/bad-words').then(r => setBadWords(r.data.words||[])).catch(()=>{})
+  }, [tab]) // eslint-disable-line
+
+  // Load new tabs
+  useEffect(() => {
+    if (tab==='📣 Announcements') api('/admin/announcements').then(r=>setAnnouncements(r.data)).catch(()=>{})
+    if (tab==='🔧 Maintenance')   api('/admin/maintenance').then(r=>setMaintenance(r.data)).catch(()=>{})
+    if (tab==='🌐 IP Block')      api('/admin/ip-blocks').then(r=>setBlockedIPs(r.data.blocked_ips||[])).catch(()=>{})
+    if (tab==='🏆 Leaderboard') {
+      api('/admin/leaderboard/achievements').then(r=>setLeaderboard(p=>({...p,achievements:r.data}))).catch(()=>{})
+      api('/admin/leaderboard/messages').then(r=>setLeaderboard(p=>({...p,messages:r.data}))).catch(()=>{})
+    }
+    if (tab==='📞 Call Stats')  api('/admin/analytics/calls').then(r=>setCallStats(r.data)).catch(()=>{})
+    if (tab==='🎁 Gifts')       api('/admin/gifts').then(r=>setGifts(r.data)).catch(()=>{})
+    if (tab==='💝 Blocks')      api('/admin/blocks').then(r=>setBlockRels(r.data)).catch(()=>{})
+    if (tab==='📊 Platform')    api('/admin/platform-stats').then(r=>setPlatStats(r.data)).catch(()=>{})
+    if (tab==='🪪 Activity Log') api('/admin/activity-log').then(r=>setActivityLog(r.data)).catch(()=>{})
   }, [tab]) // eslint-disable-line
 
   // Load bans/warnings/suspicious/scheduled
@@ -1038,6 +1066,237 @@ export default function Admin() {
               <li>The message appears as an orange warning notification</li>
               <li>Use this for: maintenance warnings, new features, announcements</li>
             </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ══ ANNOUNCEMENTS ══ */}
+      {tab==='📣 Announcements' && (
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div className={s.tableCard} style={{padding:20}}>
+            <div className={s.tableTitle} style={{marginBottom:12}}>📣 Create Announcement</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              <input className={s.searchInput} style={{width:'100%'}} placeholder="Title" value={annForm.title} onChange={e=>setAnnForm(p=>({...p,title:e.target.value}))} />
+              <textarea style={{width:'100%',background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',fontSize:14,color:'var(--text-primary)',outline:'none',fontFamily:'inherit',resize:'none',minHeight:80}} placeholder="Message to all users" value={annForm.message} onChange={e=>setAnnForm(p=>({...p,message:e.target.value}))} />
+              <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                <select style={{background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',fontSize:13,color:'var(--text-primary)',outline:'none'}} value={annForm.type} onChange={e=>setAnnForm(p=>({...p,type:e.target.value}))}>
+                  <option value="info">ℹ️ Info</option>
+                  <option value="warning">⚠️ Warning</option>
+                  <option value="success">✅ Success</option>
+                  <option value="error">🚨 Alert</option>
+                </select>
+                <button className={s.saveBtn} style={{margin:0}} onClick={async()=>{
+                  const r=await api('/admin/announcements',{method:'POST',data:annForm})
+                  setAnnouncements(p=>[r.data,...p])
+                  setAnnForm({title:'',message:'',type:'info'})
+                  addToast('Announcement sent to all users!','success')
+                }}>📣 Send to All</button>
+              </div>
+            </div>
+          </div>
+          <div className={s.tableCard}>
+            <div className={s.tableHeader}><div className={s.tableTitle}>Past Announcements</div></div>
+            {announcements.map(a=>(
+              <div key={a.id} style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:12,alignItems:'flex-start'}}>
+                <span style={{fontSize:20}}>{a.type==='warning'?'⚠️':a.type==='error'?'🚨':a.type==='success'?'✅':'ℹ️'}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:'var(--text-primary)'}}>{a.title}</div>
+                  <div style={{fontSize:13,color:'var(--text-secondary)',marginTop:2}}>{a.message}</div>
+                  <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>{timeAgo(a.created_at)}</div>
+                </div>
+                <span className={`${s.badge} ${a.active?s.badgeGreen:s.badgeGray}`}>{a.active?'Active':'Inactive'}</span>
+                {a.active && <button className={`${s.actionBtn2} ${s.deleteBtn}`} onClick={()=>{api('/admin/announcements',{method:'DELETE',data:{id:a.id}});setAnnouncements(p=>p.map(x=>x.id===a.id?{...x,active:false}:x))}}>Off</button>}
+              </div>
+            ))}
+            {announcements.length===0&&<div className={s.noData} style={{padding:24}}>No announcements yet</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ══ MAINTENANCE ══ */}
+      {tab==='🔧 Maintenance' && (
+        <div className={s.tableCard} style={{padding:24,maxWidth:500}}>
+          <div style={{fontSize:36,marginBottom:8}}>🔧</div>
+          <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)',marginBottom:4}}>Maintenance Mode</div>
+          <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:16}}>When ON, all users see a maintenance screen and can't use the app</div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+            <span style={{fontWeight:600}}>Status:</span>
+            <span className={`${s.badge} ${maintenance.enabled?s.badgeRed:s.badgeGreen}`}>{maintenance.enabled?'🔴 MAINTENANCE ON':'🟢 App is Live'}</span>
+          </div>
+          <textarea style={{width:'100%',background:'var(--bg-secondary)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',fontSize:14,color:'var(--text-primary)',outline:'none',fontFamily:'inherit',resize:'none',marginBottom:12}} rows={2}
+            value={maintenance.message} onChange={e=>setMaintenance(p=>({...p,message:e.target.value}))} placeholder="Message shown to users..." />
+          <div style={{display:'flex',gap:8}}>
+            <button className={`${s.actionBtn2} ${s.unbanBtn}`} style={{padding:'10px 24px',fontSize:14}} onClick={async()=>{
+              const r=await api('/admin/maintenance',{method:'PUT',data:{enabled:false,message:maintenance.message}})
+              setMaintenance(r.data); addToast('App is LIVE again ✅','success')
+            }}>🟢 Go Live</button>
+            <button className={`${s.actionBtn2} ${s.deleteBtn}`} style={{padding:'10px 24px',fontSize:14}} onClick={async()=>{
+              const r=await api('/admin/maintenance',{method:'PUT',data:{enabled:true,message:maintenance.message}})
+              setMaintenance(r.data); addToast('⚠️ Maintenance mode ON','warning')
+            }}>🔴 Enable Maintenance</button>
+          </div>
+        </div>
+      )}
+
+      {/* ══ IP BLOCK ══ */}
+      {tab==='🌐 IP Block' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>🌐 Blocked IPs <span className={s.totalBadge}>{blockedIPs.length}</span></div></div>
+          <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',display:'flex',gap:8}}>
+            <input className={s.searchInput} style={{flex:1}} placeholder="Enter IP address to block (e.g. 192.168.1.1)" value={newIP} onChange={e=>setNewIP(e.target.value)} onKeyDown={e=>e.key==='Enter'&&(api('/admin/ip-blocks',{method:'POST',data:{ip:newIP}}).then(()=>{setBlockedIPs(p=>[...p,newIP]);setNewIP('');addToast('IP blocked','success')}))} />
+            <button className={`${s.actionBtn2} ${s.banBtn}`} onClick={()=>api('/admin/ip-blocks',{method:'POST',data:{ip:newIP}}).then(()=>{setBlockedIPs(p=>[...p,newIP]);setNewIP('');addToast('IP blocked','success')})}>🚫 Block</button>
+          </div>
+          <div style={{padding:16,display:'flex',flexWrap:'wrap',gap:8}}>
+            {blockedIPs.map(ip=>(
+              <span key={ip} style={{background:'var(--red-soft)',color:'var(--red)',padding:'5px 12px 5px 14px',borderRadius:20,fontSize:13,display:'flex',alignItems:'center',gap:6,fontWeight:600}}>
+                {ip}
+                <button onClick={()=>{api('/admin/ip-blocks',{method:'DELETE',data:{ip}});setBlockedIPs(p=>p.filter(x=>x!==ip))}} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:15}}>✕</button>
+              </span>
+            ))}
+            {blockedIPs.length===0&&<div style={{color:'var(--text-muted)',fontSize:13}}>No IPs blocked</div>}
+          </div>
+        </div>
+      )}
+
+      {/* ══ LEADERBOARD ══ */}
+      {tab==='🏆 Leaderboard' && (
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14}}>
+          <div className={s.tableCard}>
+            <div className={s.tableHeader}><div className={s.tableTitle}>🏆 Most Achievements</div></div>
+            {leaderboard.achievements.map((u,i)=>(
+              <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+                <div style={{fontSize:20,width:28,textAlign:'center',fontWeight:800,color:i<3?'var(--yellow)':'var(--text-muted)'}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}</div>
+                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.name}</div>
+                <div style={{fontSize:15,fontWeight:800,color:'var(--yellow)'}}>{u.achievement_count} 🏅</div>
+              </div>
+            ))}
+          </div>
+          <div className={s.tableCard}>
+            <div className={s.tableHeader}><div className={s.tableTitle}>💬 Most Messages</div></div>
+            {leaderboard.messages.map((u,i)=>(
+              <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+                <div style={{fontSize:20,width:28,textAlign:'center',fontWeight:800,color:i<3?'var(--accent)':'var(--text-muted)'}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}</div>
+                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.name}</div>
+                <div style={{fontSize:15,fontWeight:800,color:'var(--accent)'}}>{u.msg_count}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══ CALL STATS ══ */}
+      {tab==='📞 Call Stats' && callStats && (
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
+            {[
+              {l:'Total Calls',    v:callStats.total,             c:'#6366f1'},
+              {l:'Answered',       v:callStats.answered,           c:'#22c55e'},
+              {l:'Missed',         v:callStats.missed,             c:'#ef4444'},
+              {l:'Avg Duration',   v:`${callStats.avg_duration_sec}s`, c:'#f59e0b'},
+              {l:'Audio Calls',    v:callStats.audio_calls,        c:'#06b6d4'},
+              {l:'Video Calls',    v:callStats.video_calls,        c:'#8b5cf6'},
+            ].map(({l,v,c})=>(
+              <div key={l} className={s.statCard}><div className={s.statVal} style={{color:c}}>{v}</div><div className={s.statLabel}>{l}</div></div>
+            ))}
+          </div>
+          <div className={s.chartCard}>
+            <div className={s.chartTitle}>📞 Calls — Last 7 Days</div>
+            <div className={s.chart}>
+              {callStats.days.map((d,i)=>{
+                const maxV=Math.max(...callStats.days.map(x=>x.count),1)
+                const h=Math.round((d.count/maxV)*100)
+                return(<div key={i} className={s.chartCol}><div className={s.chartBarWrap}><div className={s.chartBar} style={{height:`${Math.max(h,d.count>0?4:0)}%`,background:'#06b6d4'}}>{d.count>0&&<span className={s.chartVal}>{d.count}</span>}</div></div><div className={s.chartLabel}>{d.day}</div></div>)
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ GIFTS ══ */}
+      {tab==='🎁 Gifts' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>🎁 Gift History <span className={s.totalBadge}>{gifts.length}</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>From</th><th>To</th><th>Gift</th><th>Message</th><th>Date</th></tr></thead>
+              <tbody>
+                {gifts.map(g=>(
+                  <tr key={g.id}>
+                    <td style={{fontWeight:600}}>{g.sender_name}</td>
+                    <td>{g.receiver_name}</td>
+                    <td style={{fontSize:20}}>{g.gift_type==='rose'?'🌹':g.gift_type==='heart'?'❤️':g.gift_type==='cake'?'🎂':g.gift_type==='trophy'?'🏆':g.gift_type==='star'?'⭐':g.gift_type==='diamond'?'💎':g.gift_type==='hug'?'🤗':'🎊'}</td>
+                    <td className={s.msgCell}>{g.message||'—'}</td>
+                    <td className={s.dateCell}>{timeAgo(g.created_at)}</td>
+                  </tr>
+                ))}
+                {gifts.length===0&&<tr><td colSpan={5} className={s.noData}>No gifts sent yet</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ BLOCK RELATIONSHIPS ══ */}
+      {tab==='💝 Blocks' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>💝 Block Relationships <span className={s.totalBadge}>{blockRels.length}</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>Blocker</th><th>Blocked</th><th>Date</th></tr></thead>
+              <tbody>
+                {blockRels.map(b=>(
+                  <tr key={b.id}>
+                    <td><div className={s.miniUser}><div className={s.miniDot} style={{background:'#6366f1'}}/>{b.blocker_name}</div></td>
+                    <td><div className={s.miniUser}><div className={s.miniDot} style={{background:'#ef4444'}}/>{b.blocked_name}</div></td>
+                    <td className={s.dateCell}>{timeAgo(b.created_at)}</td>
+                  </tr>
+                ))}
+                {blockRels.length===0&&<tr><td colSpan={3} className={s.noData}>No blocks</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ══ PLATFORM STATS ══ */}
+      {tab==='📊 Platform' && platStats && (
+        <div style={{display:'flex',flexDirection:'column',gap:14}}>
+          {Object.entries(platStats).map(([section,data])=>(
+            <div key={section} className={s.tableCard} style={{padding:16}}>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--accent)',textTransform:'uppercase',marginBottom:10}}>{section}</div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(120px,1fr))',gap:10}}>
+                {Object.entries(data).map(([k,v])=>(
+                  <div key={k} style={{background:'var(--bg-secondary)',borderRadius:10,padding:'10px 12px',textAlign:'center'}}>
+                    <div style={{fontSize:20,fontWeight:800,color:'var(--text-primary)'}}>{v}</div>
+                    <div style={{fontSize:11,color:'var(--text-muted)',marginTop:2}}>{k.replace(/_/g,' ')}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ══ ACTIVITY LOG ══ */}
+      {tab==='🪪 Activity Log' && (
+        <div className={s.tableCard}>
+          <div className={s.tableHeader}><div className={s.tableTitle}>🪪 Admin Activity Log <span className={s.totalBadge}>last 50</span></div></div>
+          <div className={s.tableWrap}>
+            <table className={s.table}>
+              <thead><tr><th>Action</th><th>Details</th><th>Time</th></tr></thead>
+              <tbody>
+                {activityLog.map((a,i)=>(
+                  <tr key={i}>
+                    <td><span className={s.msgType}>{a.action}</span></td>
+                    <td className={s.msgCell}>{a.details||'—'}</td>
+                    <td className={s.dateCell}>{timeAgo(a.at)}</td>
+                  </tr>
+                ))}
+                {activityLog.length===0&&<tr><td colSpan={3} className={s.noData}>No admin actions recorded yet</td></tr>}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
