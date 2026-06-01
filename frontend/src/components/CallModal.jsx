@@ -12,7 +12,7 @@ function fmtTime(secs) {
 export default function CallModal() {
   const {
     user, incomingCall, activeCall,
-    localStream, remoteStream,
+    localStream, remoteStream, remoteVideoFrame,
     callDuration, isMuted, isCameraOff,
     acceptCall, declineCall, endCall,
     toggleMute, toggleCamera,
@@ -123,9 +123,13 @@ export default function CallModal() {
       {isVideo ? (
         /* ── VIDEO CALL ── */
         <div className={s.videoCall}>
-          <video ref={remoteVideoRef} autoPlay playsInline className={s.remoteVideo}
-                 onLoadedMetadata={e => e.target.play().catch(()=>{})} />
-          {!remoteStream && (
+          {/* WebSocket video: show received JPEG frames */}
+          {remoteVideoFrame
+            ? <img src={remoteVideoFrame} className={s.remoteVideo} alt="Remote video" />
+            : <video ref={remoteVideoRef} autoPlay playsInline className={s.remoteVideo}
+                     onLoadedMetadata={e => e.target.play().catch(()=>{})} />
+          }
+          {!remoteVideoFrame && !remoteStream && (
             <div className={s.waitingOverlay}>
               <div className={s.callerAvatar} style={{ fontSize:48, width:100, height:100 }}>
                 {user?.name?.slice(0,2).toUpperCase()}

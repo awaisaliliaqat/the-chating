@@ -1146,6 +1146,33 @@ def on_ice_candidate(data):
     to=data.get("to")
     if to: emit("ice_candidate",{"from":uid,"candidate":data.get("candidate")},to=f"user_{to}")
 
+# ── WebSocket Media Relay (audio/video through server) ────────────────────────
+
+@socketio.on("call_ws_audio")
+def on_ws_audio(data):
+    """Relay raw PCM audio chunk to the other participant."""
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    to = data.get("to")
+    if to:
+        emit("call_ws_audio", {
+            "from": uid,
+            "pcm16": data.get("pcm16"),
+            "sampleRate": data.get("sampleRate", 16000),
+        }, to=f"user_{to}")
+
+@socketio.on("call_ws_video")
+def on_ws_video(data):
+    """Relay JPEG video frame to the other participant."""
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    to = data.get("to")
+    if to:
+        emit("call_ws_video", {
+            "from": uid,
+            "frame": data.get("frame"),
+        }, to=f"user_{to}")
+
 # ── Push Notifications ───────────────────────────────────────────────────────
 
 @app.route("/api/push/vapid-key", methods=["GET"])

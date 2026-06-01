@@ -1,6 +1,7 @@
 import { createContext, useState, useEffect, useRef, useCallback } from 'react'
 import axios from 'axios'
 import { connectSocket, disconnectSocket, getSocket } from '../utils/socket'
+import { WSCall } from '../utils/wsCall'
 
 export const AppContext = createContext(null)
 
@@ -365,33 +366,30 @@ export function AppProvider({ children }) {
   }
 
   // ── Start outgoing call ───────────────────────────────────────────────────
+  // ── WebSocket-based call engine (works through any firewall) ─────────────
+  const wsCallRef = useRef(null)
+  const [remoteVideoFrame, setRemoteVideoFrame] = useState(null)
+
   async function startCall(friendId, callType = 'audio') {
     const s = getSocket()
-    if (!s) { addToast('Not connected. Please refresh the page.', 'error'); return }
-
-    // Check if HTTPS (required for microphone/camera)
+    if (!s) { addToast('Not connected — please refresh.', 'error'); return }
     if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
-      addToast('Calling requires HTTPS. Use: https://the-chating.47.129.200.84.nip.io', 'error')
-      return
+      addToast('Calls require HTTPS. Open: https://the-chating.trading-ai.bot', 'error'); return
     }
-
     try {
-      const constraints = callType === 'video'
-        ? { audio: true, video: true }
-        : { audio: true, video: false }
+      const wsc = new WSCall(s, friendId, callType)
+      wsc.onLocalStream  = (stream) => { localStreamRef.current = stream; setLocalStream(stream) }
+      wsc.onRemoteVideo  = (frame)  => setRemoteVideoFrame(frame)
+      wsCallRef.current  = wsc
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      localStreamRef.current = stream
-      setLocalStream(stream)
+      // Start receiving BEFORE sending (so socket listeners are ready)
+      wsc.startReceiving()
+      await wsc.startSending()
 
-      const pc = createPC(friendId)
-      stream.getTracks().forEach(t => pc.addTrack(t, stream))
-
-      const offer = await pc.createOffer()
-      await pc.setLocalDescription(offer)
-
-      s.emit('call_offer', { to: friendId, offer, call_type: callType })
+      // Notify the other person via signaling
+      s.emit('call_offer', { to: friendId, offer: null, call_type: callType, ws_mode: true })
       setActiveCall({ peerId: friendId, callId: null, callType, outgoing: true })
+      startTimer()
     } catch(err) {
       handleMediaError(err, callType)
       cleanupCall()
@@ -400,27 +398,20 @@ export function AppProvider({ children }) {
 
   // ── Accept incoming call ──────────────────────────────────────────────────
   async function acceptCall() {
-    stopRing()   // stop ringing when answered
+    stopRing()
     const s = getSocket()
     if (!s || !incomingCall) return
-    const { from, callId, offer, callType } = incomingCall
+    const { from, callId, callType } = incomingCall
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        callType === 'video' ? { audio: true, video: true } : { audio: true }
-      )
-      localStreamRef.current = stream
-      setLocalStream(stream)
+      const wsc = new WSCall(s, from, callType)
+      wsc.onLocalStream  = (stream) => { localStreamRef.current = stream; setLocalStream(stream) }
+      wsc.onRemoteVideo  = (frame)  => setRemoteVideoFrame(frame)
+      wsCallRef.current  = wsc
 
-      const pc = createPC(from)
-      stream.getTracks().forEach(t => pc.addTrack(t, stream))
+      wsc.startReceiving()
+      await wsc.startSending()
 
-      await pc.setRemoteDescription(new RTCSessionDescription(offer))
-      remoteDescSet.current = true
-
-      const answer = await pc.createAnswer()
-      await pc.setLocalDescription(answer)
-
-      s.emit('call_answer', { to: from, answer, call_id: callId })
+      s.emit('call_answer', { to: from, answer: null, call_id: callId, ws_mode: true })
 
       setIncomingCall(null)
       setActiveCall({ peerId: from, callId, callType, outgoing: false })
@@ -432,7 +423,7 @@ export function AppProvider({ children }) {
   }
 
   function declineCall() {
-    stopRing()   // stop ringing when declined
+    stopRing()
     const s = getSocket()
     if (incomingCall) s?.emit('call_decline', { to: incomingCall.from, call_id: incomingCall.callId })
     setIncomingCall(null)
@@ -446,12 +437,12 @@ export function AppProvider({ children }) {
 
   function cleanupCall() {
     if (callTimerRef.current) clearInterval(callTimerRef.current)
+    wsCallRef.current?.stop(); wsCallRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
     localStreamRef.current = null
     pcRef.current?.close(); pcRef.current = null
-    remoteDescSet.current = false
-    pendingCandidatesRef.current = []
     setLocalStream(null); setRemoteStream(null)
+    setRemoteVideoFrame(null)
     setActiveCall(null);  setIncomingCall(null)
     setCallDuration(0);   setIsMuted(false); setIsCameraOff(false)
   }
@@ -528,7 +519,7 @@ export function AppProvider({ children }) {
       onlineUsers, availableUsers, badWordAlerts, setBadWordAlerts,
       micBlocked, setMicBlocked, subscribeToPush,
       incomingCall, activeCall,
-      localStream, remoteStream,
+      localStream, remoteStream, remoteVideoFrame,
       callDuration, isMuted, isCameraOff,
       startCall, acceptCall, declineCall, endCall,
       toggleMute, toggleCamera,
