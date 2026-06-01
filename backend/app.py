@@ -933,10 +933,16 @@ def on_send_message(data):
     reply_to = data.get("reply_to_id")
     expires  = data.get("expires_in")  # minutes
     if not to or (not content and not file_b64): return
+    db = get_db()
+    # Validate receiver exists
+    if not db.execute("SELECT id FROM users WHERE id=?", (to,)).fetchone():
+        db.close(); return
     exp_dt = None
     if expires:
-        exp_dt = (datetime.datetime.utcnow() + datetime.timedelta(minutes=int(expires))).isoformat()
-    db = get_db()
+        try:
+            exp_dt = (datetime.datetime.utcnow() + datetime.timedelta(minutes=int(expires))).isoformat()
+        except (ValueError, TypeError):
+            pass
     db.execute("INSERT INTO messages (sender_id,receiver_id,content,msg_type,file_b64,file_name,reply_to_id,expires_at) VALUES (?,?,?,?,?,?,?,?)",
                (uid,to,content,mtype,file_b64,file_name,reply_to,exp_dt))
     db.commit()

@@ -88,32 +88,36 @@ export function AppProvider({ children }) {
         from: d.from, callId: d.call_id, offer: d.offer,
         callType: d.call_type, callerName: d.caller_name, callerColor: d.caller_color,
       })
-      // Play ring sound
+      // Play ring sound (works on all browsers including iOS Safari)
       try {
-        const ctx = new AudioContext()
-        const playBeep = (freq, start, dur) => {
-          const osc = ctx.createOscillator()
-          const g   = ctx.createGain()
-          osc.connect(g); g.connect(ctx.destination)
-          osc.frequency.value = freq
-          g.gain.setValueAtTime(0.4, ctx.currentTime + start)
-          g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
-          osc.start(ctx.currentTime + start)
-          osc.stop(ctx.currentTime + start + dur)
+        const AC = window.AudioContext || window.webkitAudioContext
+        if (AC) {
+          const ctx = new AC()
+          const playBeep = (freq, start, dur) => {
+            const osc = ctx.createOscillator()
+            const g   = ctx.createGain()
+            osc.connect(g); g.connect(ctx.destination)
+            osc.frequency.value = freq
+            g.gain.setValueAtTime(0.4, ctx.currentTime + start)
+            g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur)
+            osc.start(ctx.currentTime + start)
+            osc.stop(ctx.currentTime + start + dur)
+          }
+          for (let i = 0; i < 3; i++) {
+            playBeep(880, i * 0.8, 0.4)
+            playBeep(660, i * 0.8 + 0.1, 0.3)
+          }
         }
-        // Ring pattern: beeep... beeep...
-        for (let i = 0; i < 3; i++) {
-          playBeep(880, i * 0.8, 0.4)
-          playBeep(660, i * 0.8 + 0.1, 0.3)
-        }
-      } catch { /* ignore */ }
+      } catch { /* ignore audio errors */ }
       // Push notification
-      if (Notification.permission === 'granted') {
-        new Notification(`📞 Incoming call from ${d.caller_name}`, {
-          body: `${d.call_type === 'video' ? '📹 Video' : '📞 Audio'} call — tap to answer`,
-          icon: '/favicon.ico',
-        })
-      }
+      try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          new Notification(`📞 Incoming call from ${d.caller_name}`, {
+            body: `${d.call_type === 'video' ? '📹 Video' : '📞 Audio'} call`,
+            icon: '/favicon.ico',
+          })
+        }
+      } catch { /* ignore notification errors */ }
     })
 
     s.on('call_answered', async ({ answer, call_id }) => {

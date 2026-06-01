@@ -142,6 +142,7 @@ export default function Messages() {
     if (!socket) return
 
     const onMsg = (msg) => {
+      if (!user) return
       const peerId = msg.sender_id===user.id ? msg.receiver_id : msg.sender_id
       setConvos(prev => {
         const existing = prev.find(c=>c.peer_id===peerId)||{}
