@@ -4,7 +4,13 @@ import { connectSocket, disconnectSocket, getSocket } from '../utils/socket'
 
 export const AppContext = createContext(null)
 
-const API = (import.meta.env.VITE_API_BASE || 'http://localhost:5001') + '/api'
+// Use relative URL in production (works from ANY domain/tunnel)
+// Use localhost only for local development
+const API = import.meta.env.VITE_API_BASE
+  ? import.meta.env.VITE_API_BASE + '/api'
+  : (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+      ? window.location.origin + '/api'
+      : 'http://localhost:5001/api')
 
 export function AppProvider({ children }) {
   const [user,        setUser]        = useState(null)

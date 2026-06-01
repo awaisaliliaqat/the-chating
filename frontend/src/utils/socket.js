@@ -5,7 +5,11 @@ let socket = null
 export function connectSocket(token) {
   if (socket?.connected) socket.disconnect()
 
-  const SOCKET_URL = import.meta.env.VITE_API_BASE || 'http://localhost:5001'
+  // Works from any domain automatically
+  const SOCKET_URL = import.meta.env.VITE_API_BASE
+    || (typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+        ? window.location.origin
+        : 'http://localhost:5001')
 
   socket = io(SOCKET_URL, {
     auth: { token },
