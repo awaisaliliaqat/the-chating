@@ -4,7 +4,30 @@ import Avatar from '../components/Avatar'
 import s from './CallDirectory.module.css'
 
 export default function CallDirectory() {
-  const { user, api, startCall, availableUsers, onlineUsers, addToast } = useContext(AppContext)
+  const { user, api, startCall, availableUsers, onlineUsers, addToast, micBlocked, setMicBlocked } = useContext(AppContext)
+  const [permChecked, setPermChecked] = useState(false)
+  const [permState,   setPermState]   = useState('unknown') // 'granted'|'denied'|'prompt'|'unknown'
+
+  // Check microphone permission on mount
+  useEffect(() => {
+    if (!navigator.permissions) { setPermChecked(true); return }
+    navigator.permissions.query({ name: 'microphone' })
+      .then(r => { setPermState(r.state); setPermChecked(true); r.onchange = () => setPermState(r.state) })
+      .catch(() => setPermChecked(true))
+  }, [])
+
+  async function requestMicPermission() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(t => t.stop())
+      setPermState('granted')
+      setMicBlocked(false)
+      addToast('✅ Microphone access granted! You can now make calls.', 'success')
+    } catch(err) {
+      setPermState('denied')
+      addToast('❌ Microphone blocked. Please allow it in browser settings.', 'error')
+    }
+  }
 
   const [available,    setAvailable]    = useState(false)
   const [users,        setUsers]        = useState([])
@@ -105,6 +128,39 @@ export default function CallDirectory() {
           </button>
         </div>
       </div>
+
+      {/* ── Mic permission banner ── */}
+      {permChecked && permState !== 'granted' && (
+        <div className={s.permBanner}>
+          <div className={s.permLeft}>
+            <span className={s.permIcon}>{permState === 'denied' ? '🚫' : '🎙️'}</span>
+            <div>
+              <div className={s.permTitle}>
+                {permState === 'denied'
+                  ? 'Microphone is BLOCKED — calls will not work'
+                  : 'Microphone permission needed for calls'}
+              </div>
+              <div className={s.permSub}>
+                {permState === 'denied'
+                  ? 'Click the 🔒 padlock in your browser address bar → Microphone → Allow'
+                  : 'Click the button to allow microphone access so you can make calls'}
+              </div>
+            </div>
+          </div>
+          {permState !== 'denied' && (
+            <button className={s.permBtn} onClick={requestMicPermission}>
+              Allow Microphone
+            </button>
+          )}
+          {permState === 'denied' && (
+            <button className={s.permBtnFix} onClick={() => {
+              addToast('Click the 🔒 padlock → Microphone → Allow → Refresh page', 'warning')
+            }}>
+              How to fix?
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Action bar ── */}
       <div className={s.actionBar}>

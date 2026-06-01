@@ -23,6 +23,7 @@ export function AppProvider({ children }) {
   const [callDuration, setCallDuration] = useState(0)
   const [isMuted,      setIsMuted]      = useState(false)
   const [isCameraOff,  setIsCameraOff]  = useState(false)
+  const [micBlocked,   setMicBlocked]   = useState(false)
 
   const pcRef                = useRef(null)
   const localStreamRef       = useRef(null)
@@ -152,6 +153,26 @@ export function AppProvider({ children }) {
   }
 
   // ── Call timer ────────────────────────────────────────────────────────────
+  // ── Media error handler ───────────────────────────────────────────────────
+  function handleMediaError(err, callType = 'audio') {
+    console.error('Media error:', err.name, err.message)
+    const name = err.name || ''
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      addToast('🚫 Microphone access was BLOCKED by your browser. See instructions below.', 'error')
+      setMicBlocked(true)
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      addToast('🎙️ No microphone found on this device.', 'error')
+    } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+      addToast('🎙️ Microphone is being used by another app. Close it and try again.', 'error')
+    } else if (name === 'OverconstrainedError') {
+      addToast('📷 Camera not available. Trying audio only…', 'warning')
+    } else if (name === 'TypeError') {
+      addToast('❌ Your browser does not support calls. Try Chrome or Firefox.', 'error')
+    } else {
+      addToast(`❌ Call error: ${err.message || err.name}`, 'error')
+    }
+  }
+
   function startTimer() {
     const start = Date.now()
     setCallDuration(0)
@@ -201,9 +222,11 @@ export function AppProvider({ children }) {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        callType === 'video' ? { audio: true, video: true } : { audio: true }
-      )
+      const constraints = callType === 'video'
+        ? { audio: true, video: true }
+        : { audio: true, video: false }
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
       localStreamRef.current = stream
       setLocalStream(stream)
 
@@ -216,13 +239,7 @@ export function AppProvider({ children }) {
       s.emit('call_offer', { to: friendId, offer, call_type: callType })
       setActiveCall({ peerId: friendId, callId: null, callType, outgoing: true })
     } catch(err) {
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        addToast('Microphone/camera permission denied. Allow it in your browser settings.', 'error')
-      } else if (err.name === 'NotFoundError') {
-        addToast('No microphone found. Please connect one and try again.', 'error')
-      } else {
-        addToast('Could not start call: ' + err.message, 'error')
-      }
+      handleMediaError(err, callType)
       cleanupCall()
     }
   }
@@ -253,8 +270,8 @@ export function AppProvider({ children }) {
       setIncomingCall(null)
       setActiveCall({ peerId: from, callId, callType, outgoing: false })
       startTimer()
-    } catch {
-      addToast('Could not access microphone/camera', 'error')
+    } catch(err) {
+      handleMediaError(err, callType)
       declineCall()
     }
   }
@@ -322,6 +339,7 @@ export function AppProvider({ children }) {
       theme, toggleTheme: () => setTheme(t => t === 'dark' ? 'light' : 'dark'),
       toasts, addToast, removeToast,
       onlineUsers, availableUsers, badWordAlerts, setBadWordAlerts,
+      micBlocked, setMicBlocked,
       incomingCall, activeCall,
       localStream, remoteStream,
       callDuration, isMuted, isCameraOff,
