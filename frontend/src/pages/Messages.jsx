@@ -63,10 +63,12 @@ async function compressImage(file, maxKB=500) {
 }
 
 export default function Messages() {
-  const { user, api, onlineUsers, startCall } = useContext(AppContext)
+  const { user, setUser, api, onlineUsers, startCall } = useContext(AppContext)
   const { id: paramId } = useParams()
   const activePeerId = paramId ? parseInt(paramId) : null
   const navigate     = useNavigate()
+  // Mobile: 'list' shows conversation list, 'chat' shows active chat
+  const [mobileView, setMobileView] = useState(activePeerId ? 'chat' : 'list')
 
   const [convos,    setConvos]    = useState([])
   const [messages,  setMessages]  = useState([])
@@ -111,8 +113,19 @@ export default function Messages() {
 
   // Load messages for active peer
   useEffect(() => {
-    if (!activePeerId) { setMessages([]); setPeer(null); return }
-    api(`/messages/${activePeerId}`).then(r => setMessages(r.data)).catch(()=>{})
+    if (!activePeerId) {
+      setMessages([]); setPeer(null)
+      setMobileView('list')
+      return
+    }
+    setMobileView('chat')
+    api(`/messages/${activePeerId}`).then(r => {
+      setMessages(r.data)
+      // Clear unread count for this conversation
+      setConvos(p => p.map(c => c.peer_id===activePeerId ? {...c, unread:0} : c))
+      // Update global unread count
+      setUser(u => u ? { ...u, unread_count: Math.max(0, (u.unread_count||0) - (convos.find(c=>c.peer_id===activePeerId)?.unread||0)) } : u)
+    }).catch(()=>{})
     const found = convos.find(c => c.peer_id===activePeerId)
     if (found) setPeer({ id:activePeerId, name:found.peer_name, avatar_color:found.peer_color, avatar_b64:found.peer_avatar })
   }, [activePeerId]) // eslint-disable-line
@@ -420,7 +433,7 @@ export default function Messages() {
     <div className={s.page}>
 
       {/* ── Conversations sidebar ── */}
-      <div className={s.sidebar}>
+      <div className={`${s.sidebar} ${mobileView==='chat' ? s.sidebarHidden : ''}`}>
         <div className={s.sidebarHeader}>
           <h2 className={s.sidebarTitle}>Messages</h2>
           <button className={s.searchToggle} onClick={()=>setSearchOpen(p=>!p)} title="Search messages">🔍</button>
@@ -432,7 +445,7 @@ export default function Messages() {
           {filteredConvos.length===0 && <div className={s.empty}>No conversations yet</div>}
           {filteredConvos.map(c => (
             <div key={c.peer_id} className={`${s.convoItem} ${c.peer_id===activePeerId?s.active:''}`}
-              onClick={() => navigate(`/messages/${c.peer_id}`)}>
+              onClick={() => { navigate(`/messages/${c.peer_id}`); setMobileView('chat') }}>
               <Avatar user={{name:c.peer_name,avatar_color:c.peer_color,avatar_b64:c.peer_avatar}} size={42} online={onlineUsers.has(c.peer_id)} />
               <div className={s.convoInfo}>
                 <div className={s.convoTop}>
@@ -454,16 +467,18 @@ export default function Messages() {
 
       {/* ── Chat area ── */}
       {!activePeerId ? (
-        <div className={s.empty2}>
+        <div className={`${s.empty2} ${mobileView==='list' ? '' : s.chatHidden}`}>
           <div className={s.emptyIcon}>💬</div>
           <div className={s.emptyTitle}>Your Messages</div>
           <div className={s.emptyText}>Select a conversation to start chatting</div>
         </div>
       ) : (
-        <div className={s.chat}>
+        <div className={`${s.chat} ${mobileView==='list' ? s.chatHidden : ''}`}>
 
           {/* Header */}
           <div className={s.chatHeader}>
+            {/* Mobile back button */}
+            <button className={s.backBtn} onClick={() => { setMobileView('list'); navigate('/messages') }}>←</button>
             <Avatar user={peer} size={38} online={isOnline} />
             <div className={s.chatPeerInfo}>
               <div className={s.chatPeerName}>{peer?.name||'…'}</div>

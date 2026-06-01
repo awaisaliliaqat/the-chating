@@ -114,9 +114,29 @@ export function AppProvider({ children }) {
       }
     })
 
-    s.on('friend_request',  u => addToast(`${u.name} sent you a friend request!`, 'info'))
+    s.on('friend_request',  u => {
+      addToast(`${u.name} sent you a friend request!`, 'info')
+      setUser(p => p ? { ...p, pending_requests: (p.pending_requests || 0) + 1 } : p)
+    })
     s.on('friend_accepted', u => addToast(`${u.name} accepted your friend request!`, 'success'))
     s.on('broadcast', d => addToast(`📢 ${d.from}: ${d.message}`, 'warning'))
+
+    // ── Live unread count updates ──────────────────────────────────────────
+    s.on('new_message', msg => {
+      // Only update unread if WE are the receiver and it's a new message from someone else
+      // We get our own user_id from the token
+      try {
+        const tokenData = JSON.parse(atob(token.split('.')[1]))
+        const myId = tokenData.user_id
+        if (msg.receiver_id === myId && msg.sender_id !== myId) {
+          setUser(p => p ? { ...p, unread_count: (p.unread_count || 0) + 1 } : p)
+        }
+      } catch { /* ignore */ }
+    })
+
+    s.on('messages_read', () => {
+      // When peer reads our messages, no action needed on our side
+    })
     s.on('bad_word_alert', d => {
       setBadWordAlerts(p => [d, ...p.slice(0, 49)])  // keep last 50
       addToast(`🚨 Bad word from @${d.sender_name}: "${d.bad_words.join(', ')}"`, 'error')
