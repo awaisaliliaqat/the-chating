@@ -1007,6 +1007,19 @@ def on_send_message(data):
         found = check_bad_words(content)
         if found:
             flag_message(db, mid, uid, content, found, "dm")
+
+    # ── Push notification if receiver is offline ──
+    if to not in user_sockets:
+        sender = db.execute("SELECT name, avatar_color FROM users WHERE id=?",(uid,)).fetchone()
+        sender_name = sender["name"] if sender else "Someone"
+        notif_body = content if content else ("📷 Image" if mtype=="image" else "🎤 Voice message" if mtype=="audio" else "📎 File")
+        send_push_to_user(
+            to,
+            title=f"💬 {sender_name}",
+            body=notif_body[:100],
+            data={"type":"new_message","sender_id":uid,"sender_name":sender_name,"chat_url":f"/messages/{uid}"}
+        )
+
     db.close()
     emit("new_message",msg,to=f"user_{to}")
     emit("new_message",msg,to=f"user_{uid}")
@@ -1037,6 +1050,24 @@ def on_group_message(data):
         found = check_bad_words(content)
         if found:
             flag_message(db, mid, uid, content, found, "group")
+
+    # Push notifications to offline group members
+    db2 = get_db()
+    group = db2.execute("SELECT name FROM groups WHERE id=?",(gid,)).fetchone()
+    group_name = group["name"] if group else "Group"
+    members = db2.execute("SELECT user_id FROM group_members WHERE group_id=? AND user_id!=?",(gid,uid)).fetchall()
+    db2.close()
+    for m in members:
+        mid2 = m["user_id"]
+        if mid2 not in user_sockets:
+            notif_body = content if content else ("📷 Image" if mtype=="image" else "📎 File")
+            send_push_to_user(
+                mid2,
+                title=f"💬 {sender['name']} in {group_name}",
+                body=notif_body[:100],
+                data={"type":"group_message","group_id":gid,"chat_url":f"/groups/{gid}"}
+            )
+
     emit("group_message",msg,to=f"group_{gid}")
 
 @socketio.on("send_room_message")

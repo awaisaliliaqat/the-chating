@@ -60,10 +60,15 @@ export function AppProvider({ children }) {
 
   // Register service worker for push notifications
   useEffect(() => {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js')
-        .catch(() => {}) // silent fail
-    }
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+
+    // Handle navigation messages from service worker (notification click)
+    navigator.serviceWorker.addEventListener('message', e => {
+      if (e.data?.type === 'navigate' && e.data.url) {
+        window.location.href = e.data.url
+      }
+    })
   }, [])
 
   // Boot: restore session
@@ -146,15 +151,40 @@ export function AppProvider({ children }) {
     s.on('friend_accepted', u => addToast(`${u.name} accepted your friend request!`, 'success'))
     s.on('broadcast', d => addToast(`📢 ${d.from}: ${d.message}`, 'warning'))
 
-    // ── Live unread count updates ──────────────────────────────────────────
+    // ── Live unread count + in-app toast notification ─────────────────────
     s.on('new_message', msg => {
-      // Only update unread if WE are the receiver and it's a new message from someone else
-      // We get our own user_id from the token
       try {
         const tokenData = JSON.parse(atob(token.split('.')[1]))
         const myId = tokenData.user_id
         if (msg.receiver_id === myId && msg.sender_id !== myId) {
+          // Update badge count
           setUser(p => p ? { ...p, unread_count: (p.unread_count || 0) + 1 } : p)
+
+          // In-app notification if NOT on the messages page
+          const onMsgsPage = window.location.pathname.startsWith('/messages')
+          if (!onMsgsPage) {
+            const senderName = msg.sender_name || 'Someone'
+            const preview    = msg.msg_type === 'image' ? '📷 Photo'
+                             : msg.msg_type === 'audio' ? '🎤 Voice message'
+                             : (msg.content || '').slice(0, 60)
+            addToast(`💬 ${senderName}: ${preview}`, 'info')
+          }
+
+          // Browser notification if tab is hidden
+          if (document.hidden && Notification.permission === 'granted') {
+            const senderName = msg.sender_name || 'Someone'
+            const preview = msg.msg_type === 'image' ? '📷 Photo'
+                          : msg.msg_type === 'audio' ? '🎤 Voice message'
+                          : (msg.content || '').slice(0, 80)
+            try {
+              new Notification(`💬 ${senderName}`, {
+                body: preview,
+                icon: '/icons/icon-192.png',
+                badge: '/icons/icon-72.png',
+                tag: `msg_${msg.sender_id}`,
+              })
+            } catch { /* ignore */ }
+          }
         }
       } catch { /* ignore */ }
     })
