@@ -592,7 +592,7 @@ def conversations():
     if err: return err
     db   = get_db()
     rows = db.execute('''
-        SELECT m.*, u.name AS peer_name, u.avatar_color AS peer_color, u.avatar_b64 AS peer_avatar,
+        SELECT m.*, COALESCE(u.nickname,u.name) AS peer_name, u.avatar_color AS peer_color, u.avatar_b64 AS peer_avatar,
                (SELECT COUNT(*) FROM messages m2 WHERE m2.sender_id=u.id AND m2.receiver_id=? AND m2.is_read=0 AND m2.deleted_at IS NULL) AS unread
         FROM messages m
         JOIN users u ON (CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END = u.id)
@@ -648,7 +648,7 @@ def search_messages():
     if len(q) < 2: return jsonify([]),200
     db   = get_db()
     rows = db.execute('''
-        SELECT m.*, u.name AS sender_name FROM messages m
+        SELECT m.*, COALESCE(u.nickname,u.name) AS sender_name FROM messages m
         JOIN users u ON m.sender_id=u.id
         WHERE (m.sender_id=? OR m.receiver_id=?) AND m.content LIKE ? AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC LIMIT 30
@@ -857,7 +857,7 @@ def group_messages(gid):
     db = get_db()
     mem = db.execute("SELECT id FROM group_members WHERE group_id=? AND user_id=?",(gid,uid)).fetchone()
     if not mem: db.close(); return jsonify({"message":"Not a member"}),403
-    rows = db.execute("SELECT gm.*, u.name AS sender_name, u.avatar_color AS sender_color, u.avatar_b64 AS sender_avatar FROM group_messages gm JOIN users u ON gm.sender_id=u.id WHERE gm.group_id=? ORDER BY gm.created_at ASC LIMIT 200",(gid,)).fetchall()
+    rows = db.execute("SELECT gm.*, COALESCE(u.nickname,u.name) AS sender_name, u.avatar_color AS sender_color, u.avatar_b64 AS sender_avatar FROM group_messages gm JOIN users u ON gm.sender_id=u.id WHERE gm.group_id=? ORDER BY gm.created_at ASC LIMIT 200",(gid,)).fetchall()
     result = []
     for r in rows:
         d = dict(r)
@@ -1040,7 +1040,7 @@ def room_messages_get(rid):
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT rm.*, u.name AS sender_name, u.avatar_color AS sender_color, u.avatar_b64 AS sender_avatar
+        SELECT rm.*, COALESCE(u.nickname,u.name) AS sender_name, u.avatar_color AS sender_color, u.avatar_b64 AS sender_avatar
         FROM room_messages rm JOIN users u ON rm.sender_id=u.id
         WHERE rm.room_id=? ORDER BY rm.created_at ASC LIMIT 200
     ''',(rid,)).fetchall()
@@ -1141,7 +1141,7 @@ def on_send_message(data):
     # ── Push notification if receiver is offline ──
     if to not in user_sockets:
         sender = db.execute("SELECT name, avatar_color FROM users WHERE id=?",(uid,)).fetchone()
-        sender_name = sender["name"] if sender else "Someone"
+        sender_name = sender["nickname"] or sender["name"] if sender else "Someone"
         notif_body = content if content else ("📷 Image" if mtype=="image" else "🎤 Voice message" if mtype=="audio" else "📎 File")
         send_push_to_user(
             to,
@@ -1175,7 +1175,7 @@ def on_group_message(data):
     db.close()
     msg = {"id":mid,"group_id":gid,"sender_id":uid,"content":content,"msg_type":mtype,
            "file_b64":file_b64,"file_name":file_name,"created_at":datetime.datetime.utcnow().isoformat(),
-           "sender_name":sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
+           "sender_name":sender["nickname"] or sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
     if content and mtype == "text":
         found = check_bad_words(content)
         if found:
@@ -1217,7 +1217,7 @@ def on_room_message(data):
     db.close()
     msg = {"id":mid,"room_id":rid,"sender_id":uid,"content":content,
            "created_at":datetime.datetime.utcnow().isoformat(),
-           "sender_name":sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
+           "sender_name":sender["nickname"] or sender["name"],"sender_color":sender["avatar_color"],"sender_avatar":sender["avatar_b64"]}
     if content:
         found = check_bad_words(content)
         if found:
@@ -1551,7 +1551,7 @@ def admin_user_details(target_id):
     rooms_count    = db.execute("SELECT COUNT(*) as c FROM room_members WHERE user_id=?",(target_id,)).fetchone()["c"]
     stories_count  = db.execute("SELECT COUNT(*) as c FROM stories WHERE user_id=?",(target_id,)).fetchone()["c"]
     recent_msgs    = db.execute('''
-        SELECT m.content, m.created_at, m.msg_type, u.name as peer_name
+        SELECT m.content, m.created_at, m.msg_type, COALESCE(u.nickname,u.name) as peer_name
         FROM messages m JOIN users u ON (CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END = u.id)
         WHERE (m.sender_id=? OR m.receiver_id=?) AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC LIMIT 10
@@ -1640,7 +1640,7 @@ def admin_flagged():
     where = "WHERE f.is_reviewed=0" if only_unreviewed else ""
     total = db.execute(f"SELECT COUNT(*) as c FROM flagged_messages f {where}").fetchone()["c"]
     rows  = db.execute(f'''
-        SELECT f.*, u.name as sender_name, u.email as sender_email,
+        SELECT f.*, COALESCE(u.nickname,u.name) as sender_name, u.email as sender_email,
                u.avatar_color as sender_color, u.avatar_b64 as sender_avatar,
                u.is_banned as sender_banned
         FROM flagged_messages f
@@ -1702,7 +1702,7 @@ def get_starred():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT m.*, u.name as sender_name FROM messages m
+        SELECT m.*, COALESCE(u.nickname,u.name) as sender_name FROM messages m
         JOIN users u ON m.sender_id=u.id
         WHERE (m.sender_id=? OR m.receiver_id=?) AND m.is_starred=1 AND m.deleted_at IS NULL
         ORDER BY m.created_at DESC LIMIT 100
@@ -2001,7 +2001,7 @@ def admin_reports():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT r.*, a.name as reporter_name, b.name as reported_name, b.email as reported_email, b.avatar_color as reported_color
+        SELECT r.*, COALESCE(a.nickname,a.name) as reporter_name, COALESCE(b.nickname,b.name) as reported_name, b.email as reported_email, b.avatar_color as reported_color
         FROM reports r JOIN users a ON r.reporter_id=a.id JOIN users b ON r.reported_id=b.id
         ORDER BY r.created_at DESC LIMIT 100
     ''').fetchall()
@@ -2447,7 +2447,7 @@ def get_bookmarks():
     db = get_db()
     rows = db.execute('''
         SELECT b.*, m.content as msg_content, m.msg_type,
-               u.name as sender_name, u.avatar_color as sender_color
+               COALESCE(u.nickname,u.name) as sender_name, u.avatar_color as sender_color
         FROM bookmarks b
         LEFT JOIN messages m ON b.message_id=m.id
         LEFT JOIN users u ON m.sender_id=u.id
@@ -2484,7 +2484,7 @@ def get_events():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT e.*, u.name as creator_name, u.avatar_color as creator_color,
+        SELECT e.*, COALESCE(u.nickname,u.name) as creator_name, u.avatar_color as creator_color,
                (SELECT COUNT(*) FROM event_attendees WHERE event_id=e.id AND status="going") as going_count,
                EXISTS(SELECT 1 FROM event_attendees WHERE event_id=e.id AND user_id=?) as attending
         FROM events e JOIN users u ON e.creator_id=u.id
@@ -2551,7 +2551,7 @@ def group_todos(gid):
     if err: return err
     db = get_db()
     if request.method == "GET":
-        rows = db.execute("SELECT t.*,u.name as creator_name FROM group_todos t JOIN users u ON t.creator_id=u.id WHERE t.group_id=? ORDER BY t.done ASC, t.created_at DESC",(gid,)).fetchall()
+        rows = db.execute("SELECT t.*,COALESCE(u.nickname,u.name) as creator_name FROM group_todos t JOIN users u ON t.creator_id=u.id WHERE t.group_id=? ORDER BY t.done ASC, t.created_at DESC",(gid,)).fetchall()
         db.close()
         return jsonify([dict(r) for r in rows]),200
     text = (request.json or {}).get("text","").strip()
@@ -2655,7 +2655,7 @@ def send_gift():
     db.execute("INSERT INTO virtual_gifts (sender_id,receiver_id,gift_type,message) VALUES (?,?,?,?)",(uid,to,gtype,message))
     db.commit(); db.close()
     gift_info = GIFT_TYPES[gtype]
-    payload = {"from":uid,"sender_name":sender["name"],"gift_type":gtype,
+    payload = {"from":uid,"sender_name":sender["nickname"] or sender["name"],"gift_type":gtype,
                "emoji":gift_info["emoji"],"name":gift_info["name"],
                "animation":gift_info["animation"],"message":message}
     socketio.emit("gift_received",payload,to=f"user_{to}")
@@ -2679,7 +2679,7 @@ def share_location():
     sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
     db.execute("INSERT INTO location_shares (sender_id,receiver_id,lat,lng,expires_at) VALUES (?,?,?,?,?)",(uid,to,lat,lng,expires))
     db.commit(); db.close()
-    payload = {"from":uid,"sender_name":sender["name"],"lat":lat,"lng":lng,"expires_at":expires,"minutes":mins}
+    payload = {"from":uid,"sender_name":sender["nickname"] or sender["name"],"lat":lat,"lng":lng,"expires_at":expires,"minutes":mins}
     if to: socketio.emit("location_shared",payload,to=f"user_{to}")
     return jsonify({"message":"Location shared!","expires_at":expires}),200
 
@@ -2694,7 +2694,7 @@ def my_stats():
     total_recv = db.execute("SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND deleted_at IS NULL",(uid,)).fetchone()["c"]
     top_friends = db.execute('''
         SELECT CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END as friend_id,
-               COUNT(*) as msg_count, u.name as friend_name, u.avatar_color
+               COUNT(*) as msg_count, COALESCE(u.nickname,u.name) as friend_name, u.avatar_color
         FROM messages m JOIN users u ON (CASE WHEN sender_id=? THEN receiver_id ELSE sender_id END = u.id)
         WHERE (sender_id=? OR receiver_id=?) AND deleted_at IS NULL
         GROUP BY friend_id ORDER BY msg_count DESC LIMIT 5
@@ -2773,7 +2773,7 @@ def voice_rooms():
     if err: return err
     db = get_db()
     if request.method == "GET":
-        rows = db.execute("SELECT r.*, u.name as host_name, u.avatar_color as host_color FROM voice_rooms r JOIN users u ON r.host_id=u.id WHERE r.is_public=1 ORDER BY r.created_at DESC LIMIT 20").fetchall()
+        rows = db.execute("SELECT r.*, COALESCE(u.nickname,u.name) as host_name, u.avatar_color as host_color FROM voice_rooms r JOIN users u ON r.host_id=u.id WHERE r.is_public=1 ORDER BY r.created_at DESC LIMIT 20").fetchall()
         result = []
         for r in rows:
             d = dict(r)
@@ -2999,7 +2999,7 @@ def admin_groups():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT g.*, u.name as owner_name, COUNT(gm.user_id) as member_count
+        SELECT g.*, COALESCE(u.nickname,u.name) as owner_name, COUNT(gm.user_id) as member_count
         FROM groups g JOIN users u ON g.owner_id=u.id
         LEFT JOIN group_members gm ON g.id=gm.group_id
         GROUP BY g.id ORDER BY g.created_at DESC
@@ -3023,7 +3023,7 @@ def admin_rooms():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT r.*, u.name as owner_name, COUNT(rm.user_id) as member_count
+        SELECT r.*, COALESCE(u.nickname,u.name) as owner_name, COUNT(rm.user_id) as member_count
         FROM rooms r JOIN users u ON r.owner_id=u.id
         LEFT JOIN room_members rm ON r.id=rm.room_id
         GROUP BY r.id ORDER BY r.created_at DESC
@@ -3200,7 +3200,7 @@ def admin_scheduled():
     uid, err = require_admin()
     if err: return err
     db = get_db()
-    rows = db.execute("SELECT s.*,u.name as sender_name FROM scheduled_messages s JOIN users u ON s.sender_id=u.id WHERE s.sent=0 ORDER BY s.send_at ASC LIMIT 50").fetchall()
+    rows = db.execute("SELECT s.*,COALESCE(u.nickname,u.name) as sender_name FROM scheduled_messages s JOIN users u ON s.sender_id=u.id WHERE s.sent=0 ORDER BY s.send_at ASC LIMIT 50").fetchall()
     db.close()
     return jsonify([dict(r) for r in rows]),200
 
@@ -3436,7 +3436,7 @@ def admin_gifts():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT g.*, a.name as sender_name, b.name as receiver_name
+        SELECT g.*, a.name as sender_name, COALESCE(b.nickname,b.name) as receiver_name
         FROM virtual_gifts g JOIN users a ON g.sender_id=a.id JOIN users b ON g.receiver_id=b.id
         ORDER BY g.created_at DESC LIMIT 100
     ''').fetchall()
@@ -3702,7 +3702,7 @@ def stickers():
     if err: return err
     db = get_db()
     if request.method == "GET":
-        rows = db.execute("SELECT s.*,u.name as creator_name FROM stickers s JOIN users u ON s.creator_id=u.id WHERE s.is_public=1 OR s.creator_id=? ORDER BY s.created_at DESC LIMIT 100",(uid,)).fetchall()
+        rows = db.execute("SELECT s.*,COALESCE(u.nickname,u.name) as creator_name FROM stickers s JOIN users u ON s.creator_id=u.id WHERE s.is_public=1 OR s.creator_id=? ORDER BY s.created_at DESC LIMIT 100",(uid,)).fetchall()
         db.close()
         return jsonify([dict(r) for r in rows]),200
     d = request.json or {}
@@ -3762,7 +3762,7 @@ def live_streams():
     if err: return err
     db = get_db()
     if request.method == "GET":
-        rows = db.execute("SELECT ls.*,u.name as host_name,u.avatar_color as host_color FROM live_streams ls JOIN users u ON ls.host_id=u.id WHERE ls.is_active=1 ORDER BY ls.started_at DESC").fetchall()
+        rows = db.execute("SELECT ls.*,COALESCE(u.nickname,u.name) as host_name,u.avatar_color as host_color FROM live_streams ls JOIN users u ON ls.host_id=u.id WHERE ls.is_active=1 ORDER BY ls.started_at DESC").fetchall()
         result = [dict(r) for r in rows]
         for r in result: r["viewer_count"] = len(live_stream_viewers.get(r["id"],{}))
         db.close()
@@ -3862,7 +3862,7 @@ def get_payment_requests():
     db = get_db()
     rows = db.execute('''
         SELECT p.*,a.name as sender_name,a.avatar_color as sender_color,
-               b.name as receiver_name FROM payment_requests p
+               COALESCE(b.nickname,b.name) as receiver_name FROM payment_requests p
         JOIN users a ON p.sender_id=a.id JOIN users b ON p.receiver_id=b.id
         WHERE p.sender_id=? OR p.receiver_id=? ORDER BY p.created_at DESC LIMIT 50
     ''',(uid,uid)).fetchall()
@@ -3994,7 +3994,7 @@ def get_streaks():
     if err: return err
     db = get_db()
     rows = db.execute('''
-        SELECT s.*, u.name as friend_name, u.avatar_color as friend_color
+        SELECT s.*, COALESCE(u.nickname,u.name) as friend_name, u.avatar_color as friend_color
         FROM message_streaks s
         JOIN users u ON (CASE WHEN s.user1_id=? THEN s.user2_id ELSE s.user1_id END = u.id)
         WHERE s.user1_id=? OR s.user2_id=? ORDER BY s.streak_count DESC LIMIT 20
