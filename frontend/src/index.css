@@ -108,18 +108,69 @@ input, textarea { font-family: inherit; }
   flex-shrink: 0;
 }
 
-/* Make all page containers scroll smoothly on mobile */
+/* ── Universal scroll fixes ─────────────────────────────────────────── */
+
+/* All scrollable containers get smooth touch scroll */
 [class*="page"],
 [class*="messages"],
 [class*="convoList"],
 [class*="list"],
 [class*="grid"],
 [class*="content"],
-[class*="feed"] {
+[class*="feed"],
+[class*="tableWrap"],
+[class*="section"],
+[class*="panel"],
+[class*="body"],
+[class*="scroll"],
+textarea, select {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Tables always scroll horizontally */
+[class*="tableWrap"] {
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Modals/overlays scroll vertically */
+[class*="modal"],
+[class*="detailModal"],
+[class*="banModal"],
+[class*="guide"] {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  max-height: 90vh;
+}
+
+/* Admin page - make entire page scrollable */
+[class*="adminPage"],
+[class*="tableCard"] {
+  overflow: visible;
+}
+
+/* Settings sections scroll */
+[class*="sections"] {
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 /* Pull-to-refresh feel on iOS */
 body {
   overscroll-behavior-y: contain;
+}
+
+/* Horizontal scroll for tab bars */
+[class*="tabBar"],
+[class*="catFilter"],
+[class*="tabs"] {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+[class*="tabBar"]::-webkit-scrollbar,
+[class*="catFilter"]::-webkit-scrollbar,
+[class*="tabs"]::-webkit-scrollbar {
+  display: none;
 }

@@ -1,4 +1,15 @@
-.page{padding:24px 28px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:18px;background:var(--bg-primary)}
+.page{
+  padding:24px 28px;
+  height:100%;
+  overflow-y:auto;
+  overflow-x:hidden;
+  -webkit-overflow-scrolling:touch;
+  scroll-behavior:smooth;
+  display:flex;
+  flex-direction:column;
+  gap:18px;
+  background:var(--bg-primary)
+}
 
 /* Header */
 .header{display:flex;align-items:flex-start;justify-content:space-between}
@@ -17,7 +28,19 @@
 .stripLabel{font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap}
 
 /* Tabs */
-.tabBar{display:flex;gap:4px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:5px;flex-shrink:0}
+.tabBar{
+  display:flex;
+  gap:4px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:5px;
+  flex-shrink:0;
+  overflow-x:auto;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none;
+}
+.tabBar::-webkit-scrollbar{display:none}
 .tabBtn{padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;border:none;color:var(--text-secondary);background:none;transition:all .15s}
 .tabBtn:hover{background:var(--bg-hover);color:var(--text-primary)}
 .tabActive{background:var(--accent)!important;color:#fff!important}
@@ -32,7 +55,13 @@
 .searchInput::placeholder{color:var(--text-muted)}
 .searchInput:focus{border-color:var(--accent)}
 .loadingRow{display:flex;justify-content:center;padding:40px}
-.tableWrap{overflow-x:auto}
+.tableWrap{
+  overflow-x:auto;
+  overflow-y:auto;
+  max-height:600px;
+  -webkit-overflow-scrolling:touch;
+  scroll-behavior:smooth;
+}
 .table{width:100%;border-collapse:collapse}
 .table th{background:var(--bg-secondary);padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
 .sortable{cursor:pointer;user-select:none}
@@ -229,4 +258,14 @@
   .statsStrip { grid-template-columns: repeat(4, 1fr); }
   .strip { padding: 8px 6px; gap: 6px; }
   .stripIcon { width: 30px; height: 30px; font-size: 14px; }
+}
+
+/* Mobile admin scroll */
+@media (max-width: 768px) {
+  .page  { padding: 12px 10px; gap: 12px; }
+  .tabBar { gap: 3px; padding: 4px; }
+  .tabBtn { font-size: 11px; padding: 5px 8px; flex-shrink: 0; }
+  .tableWrap { max-height: 400px; }
+  .statsStrip { grid-template-columns: repeat(4,1fr); gap: 6px; }
+  .stripLabel { display: none; }
 }

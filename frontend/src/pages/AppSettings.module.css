@@ -60,3 +60,7 @@
   .slider{width:100%}
   .btnRow{flex-wrap:wrap}
 }
+
+/* Extra scroll fixes */
+.sections { overflow-y: auto; -webkit-overflow-scrolling: touch; max-height: calc(100vh - 180px); }
+.section   { overflow: visible; }
