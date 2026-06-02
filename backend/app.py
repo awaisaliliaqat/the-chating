@@ -264,7 +264,9 @@ def _annotate_friendship(db, uid, rows):
             (uid, r["id"], r["id"], uid)
         ).fetchone()
         bl = db.execute("SELECT id FROM blocks WHERE blocker_id=? AND blocked_id=?", (uid, r["id"])).fetchone()
-        u = user_dict(r)
+        # Only reveal real name if they are confirmed friends
+        is_friend = bool(fs and fs["status"] == "accepted")
+        u = user_dict(r, viewer_id=uid, is_friend=is_friend)
         u["is_online"]         = r["id"] in user_sockets
         u["friendship_id"]     = fs["id"]                    if fs else None
         u["friendship_status"] = fs["status"]                if fs else None
