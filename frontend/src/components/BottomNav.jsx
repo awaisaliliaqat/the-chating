@@ -12,16 +12,21 @@ export default function BottomNav() {
   const isAdmin = ADMIN_EMAILS.includes(user?.email?.toLowerCase())
 
   const items = [
-    { path: '/',              icon: '⊞',  label: 'Home',      end: true },
-    { path: '/messages',      icon: '💬', label: 'Chats',     badge: unread },
-    { path: '/friends',       icon: '👥', label: 'Friends',   badge: pending },
-    { path: '/groups',        icon: '🫂', label: 'Groups' },
-    { path: '/rooms',         icon: '🌐', label: 'Rooms' },
-    { path: '/call-directory',icon: '📡', label: 'Call' },
-    { path: '/contacts',      icon: '📒', label: 'Contacts' },
-    { path: '/calls',         icon: '📞', label: 'History' },
-    { path: '/profile',       icon: '👤', label: 'Profile' },
-    { path: '/settings',      icon: '⚙️', label: 'Settings' },
+    { path: '/',              icon: '⊞',  label: 'Home',     end: true },
+    { path: '/feed',          icon: '📸', label: 'Feed'                },
+    { path: '/messages',      icon: '💬', label: 'Chats',  badge: unread },
+    { path: '/friends',       icon: '👥', label: 'Friends',badge: pending },
+    { path: '/games',         icon: '🎮', label: 'Games'               },
+    { path: '/live',          icon: '📺', label: 'Live'                },
+    { path: '/call-directory',icon: '📡', label: 'Call'                },
+    { path: '/groups',        icon: '🫂', label: 'Groups'              },
+    { path: '/rooms',         icon: '🌐', label: 'Rooms'               },
+    { path: '/events',        icon: '📅', label: 'Events'              },
+    { path: '/extras',        icon: '✨', label: 'Extras'              },
+    { path: '/contacts',      icon: '📒', label: 'Contacts'            },
+    { path: '/calls',         icon: '📞', label: 'History'             },
+    { path: '/profile',       icon: '👤', label: 'Profile'             },
+    { path: '/settings',      icon: '⚙️', label: 'Settings'           },
     ...(isAdmin ? [{ path: '/admin', icon: '🛡️', label: 'Admin' }] : []),
   ]
 

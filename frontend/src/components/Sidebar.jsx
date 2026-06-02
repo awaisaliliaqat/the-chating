@@ -5,19 +5,23 @@ import Avatar from './Avatar'
 import s from './Sidebar.module.css'
 
 const NAV = [
-  { path: '/',         icon: '⊞',  label: 'Home'       },
-  { path: '/feed',     icon: '📸', label: 'Feed'       },
-  { path: '/messages', icon: '💬', label: 'Messages'   },
-  { path: '/groups',   icon: '👥', label: 'Groups'     },
-  { path: '/rooms',    icon: '🌐', label: 'Rooms'      },
-  { path: '/friends',  icon: '🤝', label: 'Friends'    },
-  { path: '/events',   icon: '📅', label: 'Events'     },
-  { path: '/games',    icon: '🎮', label: 'Games'      },
-  { path: '/live',     icon: '📺', label: 'Live'       },
-  { path: '/extras',   icon: '✨', label: 'Extras'     },
-  { path: '/contacts', icon: '📒', label: 'Contacts'   },
+  // ── Main ──
+  { path: '/',         icon: '⊞',  label: 'Home'        },
+  { path: '/feed',     icon: '📸', label: 'Feed'        },
+  { path: '/messages', icon: '💬', label: 'Messages'    },
+  { path: '/friends',  icon: '🤝', label: 'Friends'     },
+  // ── Chat ──
+  { path: '/groups',   icon: '👥', label: 'Groups'      },
+  { path: '/rooms',    icon: '🌐', label: 'Rooms'       },
+  { path: '/contacts', icon: '📒', label: 'Contacts'    },
+  // ── Calls ──
   { path: '/call-directory', icon: '📡', label: 'Call Anyone'  },
   { path: '/calls',          icon: '📞', label: 'Call History' },
+  // ── 🆕 New Features ──
+  { path: '/games',    icon: '🎮', label: '🆕 Games'    },
+  { path: '/live',     icon: '📺', label: '🆕 Live'     },
+  { path: '/events',   icon: '📅', label: '🆕 Events'   },
+  { path: '/extras',   icon: '✨', label: '🆕 Extras'   },
 ]
 
 export default function Sidebar() {

@@ -45,6 +45,28 @@ export default function Home() {
         <Avatar user={user} size={44} online />
       </div>
 
+      {/* 🆕 What's New Banner */}
+      <div style={{
+        background:'linear-gradient(135deg,#6366f1,#ec4899)',
+        borderRadius:16, padding:'14px 18px', display:'flex',
+        alignItems:'center', justifyContent:'space-between', gap:12, flexWrap:'wrap',
+        flexShrink:0
+      }}>
+        <div>
+          <div style={{fontSize:15,fontWeight:800,color:'#fff'}}>🆕 New Features Available!</div>
+          <div style={{fontSize:12,color:'rgba(255,255,255,.8)',marginTop:2}}>
+            Games, Live Streams, Feed, Events, Extras & more — explore in the menu!
+          </div>
+        </div>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          {[{e:'🎮',l:'Games',p:'/games'},{e:'📺',l:'Live',p:'/live'},{e:'📸',l:'Feed',p:'/feed'},{e:'✨',l:'Extras',p:'/extras'}].map(({e,l,p})=>(
+            <a key={p} href={p} style={{background:'rgba(255,255,255,.2)',color:'#fff',padding:'5px 12px',borderRadius:20,fontSize:12,fontWeight:700,textDecoration:'none',display:'inline-flex',alignItems:'center',gap:4}}>
+              {e} {l}
+            </a>
+          ))}
+        </div>
+      </div>
+
       {/* Stories */}
       <div className={s.storiesSection}>
         <div className={s.sectionLabel}>📖 Stories</div>
