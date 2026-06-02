@@ -56,6 +56,50 @@ BAD_WORDS = [
     "nobody likes you","you should die","worthless","useless piece",
     "kill urself","end it all",
 
+    # ── Urdu / Pakistani bad words & insults ──────────────────────────────────
+    # Body insults
+    "moti","mota","motay","moti larki","mota banda",
+    "kala","kali","kalay",
+
+    # Stupidity insults
+    "bewaqoof","bewakoof","bevaqoof",
+    "gadha","gadhe","gadhay","gadhi",
+    "ullu","ulloo","ullu ka pattha",
+    "pagal","paagal","pagla",
+    "ahmaq","besharam","be sharam",
+    "nalayak","nikamma","nikammi",
+    "jhooth","jhoota","jhooti","jhootay",
+
+    # Disrespect / rudeness
+    "badtameez","bad tameez","gustakh",
+    "kamine","kameena","kameeni","kamini",
+    "lafanga","awara","luchha",
+    "harami","haramine",
+    "haramzada","haramzadi","haraam zada",
+    "haramkhor","haram khor",
+    "bhadwa","bhadhwa",
+    "randi","raand",
+    "sala","salay","sali",
+    "kutte","kutta","kutiya","kutti",
+    "suar","suwar","suvar",
+    "janwar","jaanwar",
+
+    # Vulgar Urdu
+    "maa ki","maa ki aankh","maa ki gali",
+    "behen ki","behen ke",
+    "chutiya","chutiye","chutiyapa",
+    "lund","lnda",
+    "gand","gaand","gandu",
+    "bhosda","bhosdike",
+    "madharchod","madarchod",
+    "behenchod","bhenchod","bc",
+    "mc","maa chod","maa ka",
+    "teri maa","teri behen",
+
+    # Threats in Urdu
+    "maar donga","maar dunga","maar dunga tujhe",
+    "jaan se maar","khoon kar","tod dunga",
+
     # ── Custom test ───────────────────────────────────────────────────────────
     "676767",
 ]
