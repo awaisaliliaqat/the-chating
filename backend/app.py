@@ -82,6 +82,36 @@ user_sockets  = {}  # uid  -> {sids}
 AVATAR_COLORS = ["#6366f1","#ec4899","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ef4444","#06b6d4"]
 ROOM_COLORS   = ["#6366f1","#ec4899","#10b981","#3b82f6","#f59e0b","#8b5cf6"]
 
+# ── Nickname generator ────────────────────────────────────────────────────────
+_ADJ  = ["Cool","Fast","Bright","Happy","Bold","Smart","Swift","Calm","Kind","Brave",
+         "Wild","Free","Wise","Pure","Sharp","Quiet","Loud","Soft","Hard","Warm",
+         "Dark","Light","Mega","Ultra","Super","Hyper","Turbo","Ninja","Epic","Pro"]
+_NOUN = ["Tiger","Eagle","Phoenix","Dragon","Wolf","Fox","Lion","Bear","Hawk","Shark",
+         "Star","Moon","Sun","Storm","Fire","Ice","Wind","Rock","Wave","Sky",
+         "Byte","Pixel","Cyber","Gamer","Coder","Rider","Rider","Racer","Blaze","Ghost"]
+
+def generate_nickname():
+    import random
+    return f"{random.choice(_ADJ)}{random.choice(_NOUN)}{random.randint(10,999)}"
+
+def get_or_create_nickname(db, uid):
+    """Return existing nickname or create a unique one."""
+    user = db.execute("SELECT nickname FROM users WHERE id=?",(uid,)).fetchone()
+    if user and user["nickname"]:
+        return user["nickname"]
+    # Generate unique nickname
+    for _ in range(10):
+        nick = generate_nickname()
+        existing = db.execute("SELECT id FROM users WHERE nickname=?",(nick,)).fetchone()
+        if not existing:
+            db.execute("UPDATE users SET nickname=? WHERE id=?",(nick,uid))
+            db.commit()
+            return nick
+    nick = generate_nickname() + str(uid)
+    db.execute("UPDATE users SET nickname=? WHERE id=?",(nick,uid))
+    db.commit()
+    return nick
+
 init_db()
 
 # ── Extra feature routes (games, per-friend streaks) ─────────────────────────
@@ -109,13 +139,24 @@ def require_auth():
     if not uid: return None, (jsonify({"message":"Unauthorized"}),401)
     return uid, None
 
-def user_dict(row):
+def user_dict(row, viewer_id=None, is_friend=False, show_real_name=False):
+    """
+    Privacy-aware user dict:
+    - nickname: always shown (public)
+    - name (real name): only shown to friends or if show_real_name=True
+    """
+    nick = row["nickname"] if row["nickname"] else row["name"]
+    reveal_name = is_friend or show_real_name or (viewer_id and viewer_id == row["id"])
     return {
         "id":                  row["id"],
-        "name":                row["name"],
-        "email":               row["email"],
+        "name":                row["name"] if reveal_name else nick,
+        "real_name":           row["name"],          # always available for friend requests
+        "nickname":            nick,
+        "display_name":        row["name"] if reveal_name else nick,
+        "name_revealed":       reveal_name,
+        "email":               row["email"]  if reveal_name else "",
         "username":            row["username"],
-        "phone":               row["phone"],
+        "phone":               row["phone"]  if reveal_name else "",
         "bio":                 row["bio"],
         "avatar_color":        row["avatar_color"],
         "avatar_b64":          row["avatar_b64"],
@@ -289,13 +330,33 @@ def me():
     unread   = db.execute("SELECT COUNT(*) as c FROM messages WHERE receiver_id=? AND is_read=0 AND deleted_at IS NULL",(uid,)).fetchone()["c"]
     friends  = db.execute("SELECT COUNT(*) as c FROM friendships WHERE (requester_id=? OR addressee_id=?) AND status='accepted'",(uid,uid)).fetchone()["c"]
     pending  = db.execute("SELECT COUNT(*) as c FROM friendships WHERE addressee_id=? AND status='pending'",(uid,)).fetchone()["c"]
+    if not user: db.close(); return jsonify({"message":"Not found"}),404
+    # Ensure nickname exists
+    if not user["nickname"]:
+        get_or_create_nickname(db, uid)
+        user = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
     db.close()
-    if not user: return jsonify({"message":"Not found"}),404
-    d = user_dict(user)
+    d = user_dict(user, viewer_id=uid, show_real_name=True)  # always show own real name
     d.update(unread_count=unread, friends_count=friends, pending_requests=pending)
     return jsonify(d),200
 
 # ── Profile ───────────────────────────────────────────────────────────────────
+
+@app.route("/api/users/nickname", methods=["PUT"])
+def update_nickname():
+    uid, err = require_auth()
+    if err: return err
+    nick = (request.json or {}).get("nickname","").strip()
+    if not nick: return jsonify({"message":"Nickname required."}),400
+    if len(nick) < 3 or len(nick) > 30:
+        return jsonify({"message":"Nickname must be 3–30 characters."}),400
+    # Check uniqueness
+    db = get_db()
+    existing = db.execute("SELECT id FROM users WHERE nickname=? AND id!=?",(nick,uid)).fetchone()
+    if existing: db.close(); return jsonify({"message":"That nickname is already taken. Try another."}),409
+    db.execute("UPDATE users SET nickname=? WHERE id=?",(nick,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Nickname updated!", "nickname":nick}),200
 
 @app.route("/api/profile", methods=["PUT"])
 def update_profile():
@@ -336,8 +397,9 @@ def search_users():
     if len(q) < 2: return jsonify([]),200
     db   = get_db()
     rows = db.execute(
-        "SELECT * FROM users WHERE id!=? AND (name LIKE ? OR email LIKE ? OR username LIKE ?) LIMIT 30",
-        (uid, f"%{q}%", f"%{q}%", f"%{q}%")
+        # Search by nickname, username — NOT real name (privacy)
+        "SELECT * FROM users WHERE id!=? AND (nickname LIKE ? OR username LIKE ?) LIMIT 30",
+        (uid, f"%{q}%", f"%{q}%")
     ).fetchall()
     result = _annotate_friendship(db, uid, rows)
     db.close()
@@ -366,7 +428,7 @@ def get_friends():
         WHERE (f.requester_id=? OR f.addressee_id=?) AND f.status='accepted' ORDER BY u.name ASC
     ''',(uid,uid,uid)).fetchall()
     db.close()
-    result = [{ **user_dict(r), "is_online": r["id"] in user_sockets } for r in rows]
+    result = [{ **user_dict(r, viewer_id=uid, is_friend=True), "is_online": r["id"] in user_sockets } for r in rows]
     return jsonify(result),200
 
 @app.route("/api/friends/requests", methods=["GET"])
@@ -377,8 +439,12 @@ def friend_requests():
     inc = db.execute('SELECT u.*, f.id as f_id FROM friendships f JOIN users u ON f.requester_id=u.id WHERE f.addressee_id=? AND f.status=\'pending\' ORDER BY f.created_at DESC',(uid,)).fetchall()
     out = db.execute('SELECT u.*, f.id as f_id FROM friendships f JOIN users u ON f.addressee_id=u.id WHERE f.requester_id=? AND f.status=\'pending\' ORDER BY f.created_at DESC',(uid,)).fetchall()
     db.close()
-    return jsonify({"incoming":[{**user_dict(r),"f_id":r["f_id"]} for r in inc],
-                    "outgoing":[{**user_dict(r),"f_id":r["f_id"]} for r in out]}),200
+    # Incoming: show real name so receiver can decide whether to accept
+    # Outgoing: show nickname only (they're not friends yet)
+    return jsonify({
+        "incoming":[{**user_dict(r, viewer_id=uid, show_real_name=True), "f_id":r["f_id"]} for r in inc],
+        "outgoing":[{**user_dict(r, viewer_id=uid, is_friend=False),     "f_id":r["f_id"]} for r in out],
+    }),200
 
 @app.route("/api/friends/request/<int:tid>", methods=["POST"])
 def send_request(tid):

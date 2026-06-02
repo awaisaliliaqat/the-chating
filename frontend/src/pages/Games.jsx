@@ -99,9 +99,39 @@ export default function Games() {
             : myChoice ? '⏳ Waiting for opponent...' : '👆 Choose!'
           }
         </div>
+        {/* Show both choices clearly when game ends */}
         {game.status==='finished' && Object.keys(choices).length===2 && (
           <div className={s.rpsResult}>
-            {options.find(o=>o.v===choices[String(user?.id)])?.e} vs {options.find(o=>o.v!==choices[String(user?.id)] && Object.values(choices).includes(o.v))?.e || '?'}
+            {(() => {
+              const myId  = String(user?.id)
+              const oppId = Object.keys(choices).find(k => k !== myId)
+              const myC   = options.find(o => o.v === choices[myId])
+              const oppC  = options.find(o => o.v === choices[oppId])
+              return (
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontSize:13,color:'var(--text-muted)',marginBottom:8}}>Results</div>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:16}}>
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontSize:48}}>{myC?.e || '?'}</div>
+                      <div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>You</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'var(--text-primary)'}}>{myC?.v}</div>
+                    </div>
+                    <div style={{fontSize:22,color:'var(--text-muted)',fontWeight:700}}>vs</div>
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontSize:48}}>{oppC?.e || '?'}</div>
+                      <div style={{fontSize:12,color:'var(--text-muted)',marginTop:4}}>Opponent</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'var(--text-primary)'}}>{oppC?.v}</div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        )}
+        {/* Show your choice while waiting */}
+        {game.status==='active' && myChoice && Object.keys(choices).length===1 && (
+          <div style={{textAlign:'center',padding:'8px 0',color:'var(--text-secondary)',fontSize:13}}>
+            You chose <strong>{options.find(o=>o.v===myChoice)?.e} {myChoice}</strong> — waiting for opponent...
           </div>
         )}
       </div>

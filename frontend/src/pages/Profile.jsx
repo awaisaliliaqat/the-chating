@@ -13,6 +13,9 @@ export default function Profile() {
     bio:      user?.bio      || '',
     avatar_b64: user?.avatar_b64 || null,
   })
+  const [nickname,     setNickname]     = useState(user?.nickname || '')
+  const [nickSaving,   setNickSaving]   = useState(false)
+  const [nickError,    setNickError]    = useState('')
   const [pwdForm, setPwdForm] = useState({ current: '', new: '', confirm: '' })
   const [saving,  setSaving]  = useState(false)
   const [pwdSaving, setPwdSaving] = useState(false)
@@ -37,6 +40,21 @@ export default function Profile() {
       addToast('Profile updated!', 'success')
     } catch { addToast('Update failed', 'error') }
     finally { setSaving(false) }
+  }
+
+  async function handleSaveNickname(e) {
+    e.preventDefault()
+    setNickError('')
+    if (!nickname.trim()) { setNickError('Nickname cannot be empty'); return }
+    if (nickname.length < 3) { setNickError('At least 3 characters'); return }
+    setNickSaving(true)
+    try {
+      const r = await api('/users/nickname', { method:'PUT', data:{ nickname:nickname.trim() } })
+      setUser(u => ({ ...u, nickname: r.data.nickname }))
+      addToast('Nickname updated! 🎉', 'success')
+    } catch(err) {
+      setNickError(err.response?.data?.message || 'Failed to update nickname')
+    } finally { setNickSaving(false) }
   }
 
   async function handleChangePassword(e) {
@@ -90,6 +108,39 @@ export default function Profile() {
       </div>
 
       <div className={s.grid}>
+
+        {/* Nickname card */}
+        <div className={s.card} style={{gridColumn:'1/-1',background:'linear-gradient(135deg,rgba(99,102,241,.1),rgba(236,72,153,.1))',border:'1px solid rgba(99,102,241,.3)'}}>
+          <h2 className={s.cardTitle}>🎭 Your Public Nickname</h2>
+          <p style={{fontSize:13,color:'var(--text-secondary)',marginBottom:12,lineHeight:1.6}}>
+            <strong>Only your nickname is visible to strangers.</strong> Your real name is only shown to confirmed friends.<br/>
+            When someone sends you a friend request, they see your <strong>real name</strong> so you know who it is.
+          </p>
+          <form onSubmit={handleSaveNickname} style={{display:'flex',gap:8,alignItems:'flex-start',flexWrap:'wrap'}}>
+            <div style={{flex:1,minWidth:200}}>
+              <input
+                className={s.input}
+                value={nickname}
+                onChange={e => { setNickname(e.target.value); setNickError('') }}
+                placeholder="Your public nickname"
+                maxLength={30}
+                minLength={3}
+              />
+              {nickError && <div style={{fontSize:12,color:'var(--red)',marginTop:4}}>{nickError}</div>}
+              <div style={{fontSize:11,color:'var(--text-muted)',marginTop:4}}>3–30 characters · Must be unique · Shown to everyone</div>
+            </div>
+            <button type="submit" className={s.saveBtn} disabled={nickSaving} style={{marginTop:0}}>
+              {nickSaving ? <span className="spinner"/> : 'Save Nickname'}
+            </button>
+          </form>
+          <div style={{marginTop:12,padding:'8px 12px',background:'var(--bg-secondary)',borderRadius:8,fontSize:13}}>
+            <span style={{color:'var(--text-muted)'}}>Strangers see you as: </span>
+            <strong style={{color:'var(--accent)'}}>{nickname || user?.nickname || '...'}</strong>
+            <span style={{color:'var(--text-muted)',marginLeft:12}}>Friends see: </span>
+            <strong style={{color:'var(--green)'}}>{user?.real_name || user?.name}</strong>
+          </div>
+        </div>
+
         {/* Edit profile */}
         <div className={s.card}>
           <h2 className={s.cardTitle}>Edit Profile</h2>

@@ -156,6 +156,7 @@ export default function Friends() {
   )
 
   const pendingCount = requests.incoming.length
+  // Note: incoming requests show real_name so user can decide
 
   async function reportUser(u) {
     const reason = window.prompt(`Report ${u.name} — what is the reason?`)

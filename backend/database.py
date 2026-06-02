@@ -615,6 +615,7 @@ def init_db():
         "ALTER TABLE messages ADD COLUMN edited_at DATETIME",
         "ALTER TABLE messages ADD COLUMN deleted_at DATETIME",
         "ALTER TABLE messages ADD COLUMN expires_at DATETIME",
+        "ALTER TABLE users ADD COLUMN nickname TEXT",
         "ALTER TABLE users ADD COLUMN birthday DATE",
         "ALTER TABLE users ADD COLUMN music_status TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE users ADD COLUMN music_artist TEXT NOT NULL DEFAULT ''",
