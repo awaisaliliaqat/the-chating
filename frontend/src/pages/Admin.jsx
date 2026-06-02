@@ -208,16 +208,16 @@ export default function Admin() {
   }, [tab]) // eslint-disable-line
 
   async function warnUser(u) {
-    const reason = window.prompt(`Warn ${u.name} — enter reason:`)
+    const reason = window.prompt(`Warn ${u.real_name || u.name} — enter reason:`)
     if (!reason) return
     await api(`/admin/users/${u.id}/warn`, { method:'POST', data:{ reason } })
-    addToast(`⚠️ Warning sent to ${u.name}`, 'success')
+    addToast(`⚠️ Warning sent to ${u.real_name || u.name}`, 'success')
   }
 
   async function toggleVerify(u) {
     const r = await api(`/admin/users/${u.id}/verify`, { method:'POST' })
     setUsers(p => p.map(x => x.id===u.id ? {...x, is_verified:r.data.is_verified} : x))
-    addToast(r.data.is_verified ? `✓ ${u.name} is now verified` : `${u.name} unverified`, 'success')
+    addToast(r.data.is_verified ? `✓ ${u.real_name || u.name} is now verified` : `${u.real_name || u.name} unverified`, 'success')
   }
 
   async function resolveReport(rid) {
@@ -228,11 +228,11 @@ export default function Admin() {
 
   async function silenceUser(u) {
     await api(`/admin/users/${u.id}/silence`, { method:'POST', data:{ hours:silenceHours } })
-    addToast(`${u.name} silenced for ${silenceHours}h`, 'success')
+    addToast(`${u.real_name || u.name} silenced for ${silenceHours}h`, 'success')
   }
 
   async function resetPassword(u) {
-    const pwd = window.prompt(`New password for ${u.name}:`, 'Reset123!')
+    const pwd = window.prompt(`New password for ${u.real_name || u.name}:`, 'Reset123!')
     if (!pwd) return
     const r = await api(`/admin/users/${u.id}/reset-password`, { method:'POST', data:{ password:pwd } })
     addToast(`Password reset to: ${r.data.new_password}`, 'success')
@@ -251,7 +251,7 @@ export default function Admin() {
     const key = window.prompt('Achievement key (e.g. early_adopter, popular):')
     if (!key) return
     await api(`/admin/users/${u.id}/give-achievement`, { method:'POST', data:{ key } })
-    addToast(`Achievement given to ${u.name}`, 'success')
+    addToast(`Achievement given to ${u.real_name || u.name}`, 'success')
   }
 
   async function addBadWord() {
@@ -348,7 +348,7 @@ export default function Admin() {
       await api(`/admin/users/${u.id}/unban`, { method:'POST' })
       setUsers(p => p.map(x => x.id===u.id ? {...x, is_banned:false, ban_reason:null} : x))
       if (detailUser?.id === u.id) setDetailUser(p => ({...p, is_banned:false, ban_reason:null}))
-      addToast(`${u.name} has been unbanned`, 'success')
+      addToast(`${u.real_name || u.name} has been unbanned`, 'success')
     } catch { addToast('Failed','error') }
     finally { setAction(u.id, null) }
   }
@@ -357,20 +357,20 @@ export default function Admin() {
     setAction(u.id, 'kick')
     try {
       const r = await api(`/admin/users/${u.id}/kick`, { method:'POST' })
-      addToast(r.data.was_online ? `${u.name} has been kicked offline` : `${u.name} is not online`, 'info')
+      addToast(r.data.was_online ? `${u.real_name || u.name} has been kicked offline` : `${u.real_name || u.name} is not online`, 'info')
     } catch { addToast('Failed','error') }
     finally { setAction(u.id, null) }
   }
 
   async function handleDeleteUser(u) {
-    if (!window.confirm(`Permanently delete "${u.name}"? This cannot be undone.`)) return
+    if (!window.confirm(`Permanently delete "${u.real_name || u.name}"? This cannot be undone.`)) return
     setAction(u.id, 'delete')
     try {
       await api(`/admin/users/${u.id}`, { method:'DELETE' })
       setUsers(p => p.filter(x => x.id !== u.id))
       setTotal(p => p - 1)
       if (detailUser?.id === u.id) setDetailUser(null)
-      addToast(`${u.name} deleted`, 'success')
+      addToast(`${u.real_name || u.name} deleted`, 'success')
     } catch(e) { addToast(e.response?.data?.message||'Failed','error') }
     finally { setAction(u.id, null) }
   }
@@ -602,7 +602,7 @@ export default function Admin() {
                           <Avatar user={u} size={34} online={u.is_online_live}/>
                           <div className={s.userInfo}>
                             <div className={s.userName}>
-                              {u.name}
+                              {u.real_name || u.name}
                               {isAdmin(u.email) && <span className={s.youTag}>ADMIN</span>}
                               {u.is_banned && <span className={s.bannedTag}>BANNED</span>}
                             </div>
@@ -682,7 +682,7 @@ export default function Admin() {
                 <div key={u.id} className={s.onlineCard}>
                   <Avatar user={u} size={44} online/>
                   <div className={s.onlineCardInfo}>
-                    <div className={s.onlineCardName}>{u.name}</div>
+                    <div className={s.onlineCardName}>{u.real_name || u.name}</div>
                     <div className={s.onlineCardEmail}>{u.email}</div>
                     {isAdmin(u.email) && <span className={s.youTag}>ADMIN</span>}
                   </div>
@@ -976,7 +976,7 @@ export default function Admin() {
               <tbody>
                 {bans.map(u=>(
                   <tr key={u.id} className={s.bannedRow}>
-                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
+                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{(u.real_name || u.name)?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.real_name || u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
                     <td className={s.msgCell}>{u.ban_reason||'—'}</td>
                     <td className={s.dateCell}>{timeAgo(u.banned_at)}</td>
                     <td><button className={`${s.actionBtn2} ${s.unbanBtn}`} onClick={()=>handleUnban(u)}>✅ Unban</button></td>
@@ -1022,7 +1022,7 @@ export default function Admin() {
               <tbody>
                 {suspicious.map(u=>(
                   <tr key={u.id}>
-                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
+                    <td><div className={s.userCell}><div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{(u.real_name || u.name)?.slice(0,2).toUpperCase()}</div><div><div className={s.userName}>{u.real_name || u.name}</div><div className={s.userEmail}>{u.email}</div></div></div></td>
                     <td><span style={{fontSize:20,fontWeight:800,color:'var(--red)'}}>{u.msg_count_1h}</span></td>
                     <td><span className={`${s.badge} ${u.is_online_live?s.badgeGreen:s.badgeGray}`}>{u.is_online_live?'Online':'Offline'}</span></td>
                     <td><div className={s.actionCell}>
@@ -1166,8 +1166,8 @@ export default function Admin() {
             {leaderboard.achievements.map((u,i)=>(
               <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
                 <div style={{fontSize:20,width:28,textAlign:'center',fontWeight:800,color:i<3?'var(--yellow)':'var(--text-muted)'}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}</div>
-                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div>
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.name}</div>
+                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{(u.real_name || u.name)?.slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.real_name || u.name}</div>
                 <div style={{fontSize:15,fontWeight:800,color:'var(--yellow)'}}>{u.achievement_count} 🏅</div>
               </div>
             ))}
@@ -1177,8 +1177,8 @@ export default function Admin() {
             {leaderboard.messages.map((u,i)=>(
               <div key={u.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
                 <div style={{fontSize:20,width:28,textAlign:'center',fontWeight:800,color:i<3?'var(--accent)':'var(--text-muted)'}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}`}</div>
-                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{u.name?.slice(0,2).toUpperCase()}</div>
-                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.name}</div>
+                <div className={s.miniAvatarCircle} style={{background:u.avatar_color}}>{(u.real_name || u.name)?.slice(0,2).toUpperCase()}</div>
+                <div style={{flex:1,fontSize:13,fontWeight:600,color:'var(--text-primary)'}}>{u.real_name || u.name}</div>
                 <div style={{fontSize:15,fontWeight:800,color:'var(--accent)'}}>{u.msg_count}</div>
               </div>
             ))}
