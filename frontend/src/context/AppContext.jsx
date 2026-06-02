@@ -155,7 +155,9 @@ export function AppProvider({ children }) {
       addToast(`🚨 SOS from ${d.name}! ${d.map_url}`, 'error')
     })
     s.on('warning_received', d => {
-      addToast(`⚠️ Warning from admin: ${d.reason}`, 'warning')
+      // Show the strike-based warning to the user
+      const type = d.strike >= 3 ? 'error' : 'warning'
+      addToast(d.reason || `⚠️ Warning: ${d.reason}`, type)
     })
 
     s.on('friend_request',  u => {

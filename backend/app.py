@@ -149,29 +149,61 @@ def notify_admins(event, data):
                 socketio.emit(event, data, to=sid)
 
 def flag_message(db, message_id, sender_id, content, bad_words_found, chat_type="dm"):
-    """Save a flagged message and alert all admins in real-time."""
+    """
+    3-STRIKE BAD WORD SYSTEM:
+    - 1st offense: silent warning to user only
+    - 2nd offense: second warning to user only
+    - 3rd offense+: warning to user AND alert admin with name
+    """
     bad_str = ", ".join(bad_words_found)
+
+    # Count previous offenses
+    prev_count = db.execute(
+        "SELECT COUNT(*) as c FROM flagged_messages WHERE sender_id=?",
+        (sender_id,)
+    ).fetchone()["c"]
+
+    # Save this offense
     db.execute(
         "INSERT INTO flagged_messages (message_id, sender_id, content, bad_words, chat_type) VALUES (?,?,?,?,?)",
         (message_id, sender_id, content, bad_str, chat_type)
     )
     db.commit()
-    # Get sender info
-    sender = db.execute("SELECT * FROM users WHERE id=?", (sender_id,)).fetchone()
     flag_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
-    # Real-time alert to admins
-    notify_admins("bad_word_alert", {
-        "flag_id":    flag_id,
-        "message_id": message_id,
-        "sender_id":  sender_id,
-        "sender_name": sender["name"] if sender else "Unknown",
-        "sender_email": sender["email"] if sender else "",
-        "sender_color": sender["avatar_color"] if sender else "#6366f1",
-        "content":    content,
-        "bad_words":  bad_words_found,
-        "chat_type":  chat_type,
-        "created_at": datetime.datetime.utcnow().isoformat(),
-    })
+    sender  = db.execute("SELECT * FROM users WHERE id=?", (sender_id,)).fetchone()
+
+    strike = prev_count + 1  # current strike number
+
+    # Always warn the user
+    if sender_id in user_sockets:
+        if strike == 1:
+            warning_msg = "⚠️ Warning (1/3): Your message contained inappropriate language. Please be respectful."
+        elif strike == 2:
+            warning_msg = "⚠️ Final Warning (2/3): You used inappropriate language again. One more and the admin will be notified."
+        else:
+            warning_msg = f"🚫 Strike {strike}: You have been reported to the admin for repeated use of inappropriate language."
+
+        socketio.emit("warning_received", {
+            "reason":  warning_msg,
+            "strike":  strike,
+            "bad_words": bad_words_found,
+        }, to=f"user_{sender_id}")
+
+    # Only notify admin from 3rd offense onwards
+    if strike >= 3:
+        notify_admins("bad_word_alert", {
+            "flag_id":      flag_id,
+            "message_id":   message_id,
+            "sender_id":    sender_id,
+            "sender_name":  sender["name"] if sender else "Unknown",
+            "sender_email": sender["email"] if sender else "",
+            "sender_color": sender["avatar_color"] if sender else "#6366f1",
+            "content":      content,
+            "bad_words":    bad_words_found,
+            "chat_type":    chat_type,
+            "strike":       strike,
+            "created_at":   datetime.datetime.utcnow().isoformat(),
+        })
 
 def socket_auth(auth_data):
     token = (auth_data or {}).get("token") or request.args.get("token","")
@@ -2701,7 +2733,7 @@ def friend_suggestions():
 
 @app.route("/api/flag/voice", methods=["POST"])
 def flag_voice():
-    """Check a voice/call transcript for bad words and flag if found."""
+    """Check a voice/call transcript for bad words — uses 3-strike system."""
     uid, err = require_auth()
     if err: return err
     d = request.json or {}
@@ -2709,20 +2741,23 @@ def flag_voice():
     if not transcript: return jsonify({"flagged": False}), 200
 
     found = check_bad_words(transcript)
-    if not found: return jsonify({"flagged": False, "transcript": transcript}), 200
+    if not found: return jsonify({"flagged": False}), 200
 
+    # Use the shared flag_message helper which handles 3-strike logic
+    db = get_db()
+    flag_message(db, None, uid, f"[VOICE/CALL] {transcript[:300]}", found, "voice")
+    db.close()
+    return jsonify({"flagged": True, "bad_words": found}), 200
+
+# keep old code below for reference but it's now replaced — remove it
+def _old_flag_voice_REMOVED():
+    uid = None
     db = get_db()
     sender = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
-    # Save to flagged_messages table with type 'voice'
-    bad_str = ", ".join(found)
-    db.execute(
-        "INSERT INTO flagged_messages (message_id, sender_id, content, bad_words, chat_type) VALUES (?,?,?,?,?)",
-        (None, uid, f"[VOICE/CALL] {transcript[:300]}", bad_str, "voice")
-    )
-    db.commit()
-    flag_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    flag_id = 0
+    found = []
 
-    # Alert all admins in real-time
+    # Alert all admins in real-time  ← now handled by flag_message()
     notify_admins("bad_word_alert", {
         "flag_id":      flag_id,
         "message_id":   None,
@@ -2730,14 +2765,12 @@ def flag_voice():
         "sender_name":  sender["name"] if sender else "Unknown",
         "sender_email": sender["email"] if sender else "",
         "sender_color": sender["avatar_color"] if sender else "#6366f1",
-        "content":      f"🎤 [VOICE/CALL]: {transcript[:200]}",
-        "bad_words":    found,
+        "content":      f"🎤 [VOICE/CALL]: ...",
+        "bad_words":    [],
         "chat_type":    "voice",
         "created_at":   datetime.datetime.utcnow().isoformat(),
     })
-
-    db.close()
-    return jsonify({"flagged": True, "bad_words": found}), 200
+    pass  # old code — replaced by flag_message()
 
 # ── Admin Extended Powers ────────────────────────────────────────────────────
 
