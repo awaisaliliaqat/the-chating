@@ -592,8 +592,15 @@ def conversations():
     if err: return err
     db   = get_db()
     rows = db.execute('''
-        SELECT m.*, COALESCE(u.nickname,u.name) AS peer_name, u.avatar_color AS peer_color, u.avatar_b64 AS peer_avatar,
-               (SELECT COUNT(*) FROM messages m2 WHERE m2.sender_id=u.id AND m2.receiver_id=? AND m2.is_read=0 AND m2.deleted_at IS NULL) AS unread
+        SELECT m.*,
+               u.name AS peer_real_name,
+               COALESCE(u.nickname,u.name) AS peer_nickname,
+               u.avatar_color AS peer_color, u.avatar_b64 AS peer_avatar,
+               (SELECT COUNT(*) FROM messages m2 WHERE m2.sender_id=u.id AND m2.receiver_id=? AND m2.is_read=0 AND m2.deleted_at IS NULL) AS unread,
+               EXISTS(SELECT 1 FROM friendships WHERE (
+                   (requester_id=? AND addressee_id=u.id) OR
+                   (requester_id=u.id AND addressee_id=?)
+               ) AND status="accepted") AS is_friend
         FROM messages m
         JOIN users u ON (CASE WHEN m.sender_id=? THEN m.receiver_id ELSE m.sender_id END = u.id)
         WHERE m.id IN (
@@ -602,13 +609,15 @@ def conversations():
             GROUP BY CASE WHEN sender_id < receiver_id THEN sender_id||'_'||receiver_id ELSE receiver_id||'_'||sender_id END
         )
         ORDER BY m.created_at DESC
-    ''',(uid,uid,uid,uid)).fetchall()
+    ''',(uid,uid,uid,uid,uid,uid)).fetchall()
     result = []
     for r in rows:
         peer_id = r["receiver_id"] if r["sender_id"]==uid else r["sender_id"]
+        # Show real name to friends, nickname to strangers
+        peer_name = r["peer_real_name"] if r["is_friend"] else r["peer_nickname"]
         result.append({
             "peer_id":    peer_id,
-            "peer_name":  r["peer_name"],
+            "peer_name":  peer_name,
             "peer_color": r["peer_color"],
             "peer_avatar": r["peer_avatar"],
             "peer_online": peer_id in user_sockets,
@@ -626,6 +635,14 @@ def get_messages(peer_id):
     uid, err = require_auth()
     if err: return err
     db   = get_db()
+    # Check if they are friends (determines whether to show real name)
+    friendship = db.execute(
+        "SELECT id FROM friendships WHERE ((requester_id=? AND addressee_id=?) OR (requester_id=? AND addressee_id=?)) AND status='accepted'",
+        (uid, peer_id, peer_id, uid)
+    ).fetchone()
+    is_friend = friendship is not None
+    # Get peer info with correct name
+    peer = db.execute("SELECT name, nickname, avatar_color, avatar_b64 FROM users WHERE id=?", (peer_id,)).fetchone()
     rows = db.execute('''
         SELECT * FROM messages
         WHERE (sender_id=? AND receiver_id=?) OR (sender_id=? AND receiver_id=?)
