@@ -1294,6 +1294,19 @@ def push_subscribe():
     db.close()
     return jsonify({"message": "Subscribed."}), 201
 
+@app.route("/api/push/test", methods=["POST"])
+def push_test():
+    """Send a test push notification to yourself."""
+    uid, err = require_auth()
+    if err: return err
+    sent = send_push_to_user(
+        uid,
+        title="🔔 THE CHATING — Test",
+        body="✅ Push notifications are working on this device!",
+        data={"type": "test"}
+    )
+    return jsonify({"message": "Test notification sent to this device!"}), 200
+
 @app.route("/api/push/unsubscribe", methods=["DELETE"])
 def push_unsubscribe():
     uid, err = require_auth()
