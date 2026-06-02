@@ -2697,6 +2697,48 @@ def friend_suggestions():
         if i < len(rows): r["mutual_count"] = rows[i]["mutual_count"]
     return jsonify(result),200
 
+# ── Voice / Call Bad Word Detection ──────────────────────────────────────────
+
+@app.route("/api/flag/voice", methods=["POST"])
+def flag_voice():
+    """Check a voice/call transcript for bad words and flag if found."""
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    transcript = (d.get("transcript") or "").strip()
+    if not transcript: return jsonify({"flagged": False}), 200
+
+    found = check_bad_words(transcript)
+    if not found: return jsonify({"flagged": False, "transcript": transcript}), 200
+
+    db = get_db()
+    sender = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    # Save to flagged_messages table with type 'voice'
+    bad_str = ", ".join(found)
+    db.execute(
+        "INSERT INTO flagged_messages (message_id, sender_id, content, bad_words, chat_type) VALUES (?,?,?,?,?)",
+        (None, uid, f"[VOICE/CALL] {transcript[:300]}", bad_str, "voice")
+    )
+    db.commit()
+    flag_id = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+
+    # Alert all admins in real-time
+    notify_admins("bad_word_alert", {
+        "flag_id":      flag_id,
+        "message_id":   None,
+        "sender_id":    uid,
+        "sender_name":  sender["name"] if sender else "Unknown",
+        "sender_email": sender["email"] if sender else "",
+        "sender_color": sender["avatar_color"] if sender else "#6366f1",
+        "content":      f"🎤 [VOICE/CALL]: {transcript[:200]}",
+        "bad_words":    found,
+        "chat_type":    "voice",
+        "created_at":   datetime.datetime.utcnow().isoformat(),
+    })
+
+    db.close()
+    return jsonify({"flagged": True, "bad_words": found}), 200
+
 # ── Admin Extended Powers ────────────────────────────────────────────────────
 
 # ─ User Actions ─

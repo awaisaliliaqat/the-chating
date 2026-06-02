@@ -106,6 +106,8 @@ export default function Messages() {
   const inputRef     = useRef(null)
   const fileRef      = useRef(null)
   const mediaRecRef  = useRef(null)
+  const speechRecRef = useRef(null)  // Speech recognition for bad word detection
+  const voiceTranscriptRef = useRef('')
 
   // Load conversations
   useEffect(() => {
@@ -324,13 +326,45 @@ export default function Messages() {
         }
         reader.readAsDataURL(blob)
         stream.getTracks().forEach(t => t.stop())
+
+        // Stop speech recognition and check transcript for bad words
+        try { speechRecRef.current?.stop() } catch {}
+        const transcript = voiceTranscriptRef.current.trim()
+        if (transcript && activePeerId) {
+          // Report transcript to backend for bad word checking
+          api('/flag/voice', {
+            method: 'POST',
+            data: { transcript, receiver_id: activePeerId }
+          }).catch(() => {})
+        }
+        speechRecRef.current  = null
+        voiceTranscriptRef.current = ''
+
         setRecording(false)
       }
 
-      mr.start(1000)   // collect data every second
+      mr.start(1000)
       mediaRecRef.current = mr
       setRecording(true)
       addToast('Recording… tap 🎤 again to send', 'info')
+
+      // ── Speech recognition runs alongside recording to detect bad words ──
+      voiceTranscriptRef.current = ''
+      try {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+        if (SR) {
+          const sr = new SR()
+          sr.continuous     = true
+          sr.interimResults = true
+          sr.lang           = 'en-US'
+          sr.onresult = (e) => {
+            const text = Array.from(e.results).map(r => r[0].transcript).join(' ')
+            voiceTranscriptRef.current = text
+          }
+          sr.start()
+          speechRecRef.current = sr
+        }
+      } catch { /* speech recognition not available */ }
     } catch(err) {
       if (err.name === 'NotAllowedError') {
         addToast('Microphone permission denied. Allow it in browser settings.', 'error')

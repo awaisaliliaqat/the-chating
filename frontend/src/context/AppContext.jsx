@@ -29,6 +29,7 @@ export function AppProvider({ children }) {
   const [micBlocked,   setMicBlocked]   = useState(false)
 
   const pcRef                = useRef(null)
+  const callSpeechRef        = useRef(null)  // Speech recognition during calls
   const localStreamRef       = useRef(null)
   const callTimerRef         = useRef(null)
   const pendingCandidatesRef = useRef([])
@@ -327,6 +328,52 @@ export function AppProvider({ children }) {
     }
   }
 
+  // ── Call Speech Monitor — detects bad words said during calls ────────────
+  function startCallSpeechMonitor(peerId) {
+    try {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+      if (!SR) return
+      const sr = new SR()
+      sr.continuous     = true
+      sr.interimResults = false
+      sr.lang           = 'en-US'
+
+      sr.onresult = async (e) => {
+        const transcript = Array.from(e.results)
+          .map(r => r[0].transcript)
+          .join(' ')
+          .trim()
+        if (transcript) {
+          // Send to backend for bad word checking
+          try {
+            await axios.post(`${API}/flag/voice`,
+              { transcript, receiver_id: peerId },
+              { headers: auth() }
+            )
+          } catch { /* ignore */ }
+        }
+      }
+
+      sr.onerror = () => {}
+      sr.onend   = () => {
+        // Restart if call still active
+        if (callSpeechRef.current === sr) {
+          try { sr.start() } catch {}
+        }
+      }
+
+      sr.start()
+      callSpeechRef.current = sr
+    } catch { /* speech recognition not available */ }
+  }
+
+  function stopCallSpeechMonitor() {
+    if (callSpeechRef.current) {
+      try { callSpeechRef.current.stop() } catch {}
+      callSpeechRef.current = null
+    }
+  }
+
   function startTimer() {
     const start = Date.now()
     setCallDuration(0)
@@ -433,6 +480,7 @@ export function AppProvider({ children }) {
       s.emit('call_offer', { to: friendId, offer: null, call_type: callType, ws_mode: true })
       setActiveCall({ peerId: friendId, callId: null, callType, outgoing: true })
       startTimer()
+      startCallSpeechMonitor(friendId)  // Monitor caller's speech for bad words
     } catch(err) {
       handleMediaError(err, callType)
       cleanupCall()
@@ -459,6 +507,7 @@ export function AppProvider({ children }) {
       setIncomingCall(null)
       setActiveCall({ peerId: from, callId, callType, outgoing: false })
       startTimer()
+      startCallSpeechMonitor(from)  // Monitor receiver's speech too
     } catch(err) {
       handleMediaError(err, callType)
       declineCall()
@@ -479,6 +528,7 @@ export function AppProvider({ children }) {
   }
 
   function cleanupCall() {
+    stopCallSpeechMonitor()  // Stop speech monitoring when call ends
     if (callTimerRef.current) clearInterval(callTimerRef.current)
     wsCallRef.current?.stop(); wsCallRef.current = null
     localStreamRef.current?.getTracks().forEach(t => t.stop())
