@@ -37,6 +37,20 @@
 
 html, body, #root { height: 100%; }
 
+/* Smooth scrolling everywhere */
+html { scroll-behavior: smooth; }
+
+/* iOS momentum scrolling on all scrollable areas */
+* {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Better scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
 /* Mobile bottom nav height compensation */
 @media (max-width: 768px) {
   :root { --bottom-nav-h: 60px; }
@@ -92,4 +106,20 @@ input, textarea { font-family: inherit; }
   background: var(--green);
   border: 2px solid var(--bg-primary);
   flex-shrink: 0;
+}
+
+/* Make all page containers scroll smoothly on mobile */
+[class*="page"],
+[class*="messages"],
+[class*="convoList"],
+[class*="list"],
+[class*="grid"],
+[class*="content"],
+[class*="feed"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Pull-to-refresh feel on iOS */
+body {
+  overscroll-behavior-y: contain;
 }

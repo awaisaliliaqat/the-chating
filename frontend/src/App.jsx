@@ -7,6 +7,7 @@ import CallModal     from './components/CallModal'
 import Toast         from './components/Toast'
 import InstallBanner from './components/InstallBanner'
 import NotifSetup   from './components/NotifSetup'
+import ScrollTop    from './components/ScrollTop'
 import Login         from './pages/Login'
 import Signup        from './pages/Signup'
 import Home          from './pages/Home'
@@ -66,6 +67,7 @@ export default function App() {
   return (
     <>
       <Toast />
+      <ScrollTop />
       {user && <NotifSetup />}
 
       {/* ── Admin Warning Dialog ── */}
