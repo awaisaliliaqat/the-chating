@@ -27,6 +27,7 @@ import Events        from './pages/Events'
 import Extras        from './pages/Extras'
 import Games         from './pages/Games'
 import LiveStream    from './pages/LiveStream'
+import WishList      from './pages/WishList'
 import FeaturesHub   from './pages/FeaturesHub'
 
 function Layout({ children }) {
@@ -142,6 +143,7 @@ export default function App() {
         <Route path="/extras"        element={<Priv><Extras      /></Priv>} />
         <Route path="/games"         element={<Priv><Games       /></Priv>} />
         <Route path="/live"          element={<Priv><LiveStream  /></Priv>} />
+        <Route path="/wishlist"      element={<Priv><WishList    /></Priv>} />
         <Route path="/features"      element={<Priv><FeaturesHub /></Priv>} />
         <Route path="*" element={<Navigate to={user?'/':'login'} />} />
       </Routes>

@@ -23,6 +23,7 @@ export default function BottomNav() {
     { path: '/rooms',         icon: '🌐', label: 'Rooms'               },
     { path: '/events',        icon: '📅', label: 'Events'              },
     { path: '/extras',        icon: '✨', label: 'Extras'              },
+    { path: '/wishlist',      icon: '🌟', label: 'Wishes'              },
     { path: '/contacts',      icon: '📒', label: 'Contacts'            },
     { path: '/calls',         icon: '📞', label: 'History'             },
     { path: '/profile',       icon: '👤', label: 'Profile'             },

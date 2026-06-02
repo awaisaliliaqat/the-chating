@@ -563,6 +563,26 @@ def init_db():
             UNIQUE(user1_id, user2_id)
         );
 
+        CREATE TABLE IF NOT EXISTS wishes (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            title      TEXT    NOT NULL,
+            description TEXT   NOT NULL DEFAULT '',
+            category   TEXT    NOT NULL DEFAULT 'Feature',
+            status     TEXT    NOT NULL DEFAULT 'open',
+            votes      INTEGER NOT NULL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS wish_votes (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            wish_id  INTEGER NOT NULL,
+            user_id  INTEGER NOT NULL,
+            FOREIGN KEY (wish_id) REFERENCES wishes(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(wish_id, user_id)
+        );
+
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL,

@@ -3551,6 +3551,97 @@ def create_achievement():
     db.close()
     return jsonify({"message":f"Achievement '{name}' created."}), 201
 
+# ── Wish List ────────────────────────────────────────────────────────────────
+
+@app.route("/api/wishes", methods=["GET"])
+def get_wishes():
+    uid, err = require_auth()
+    if err: return err
+    sort = request.args.get("sort","votes")
+    cat  = request.args.get("category","")
+    db   = get_db()
+    where = "WHERE 1=1"
+    params_list = [uid]
+    if cat:
+        where += " AND w.category=?"
+        params_list.append(cat)
+    order = "w.votes DESC, w.created_at DESC" if sort=="votes" else "w.created_at DESC"
+    rows = db.execute(f'''
+        SELECT w.*, COALESCE(u.nickname,u.name) as author_name, u.avatar_color as author_color,
+               EXISTS(SELECT 1 FROM wish_votes WHERE wish_id=w.id AND user_id=?) as voted_by_me,
+               (SELECT COUNT(*) FROM wish_votes WHERE wish_id=w.id) as vote_count
+        FROM wishes w JOIN users u ON w.user_id=u.id
+        {where}
+        ORDER BY {order} LIMIT 100
+    ''', params_list).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
+
+@app.route("/api/wishes", methods=["POST"])
+def create_wish():
+    uid, err = require_auth()
+    if err: return err
+    d     = request.json or {}
+    title = (d.get("title") or "").strip()
+    desc  = (d.get("description") or "").strip()
+    cat   = d.get("category","Feature")
+    if not title: return jsonify({"message":"Title required."}), 400
+    if len(title) > 120: return jsonify({"message":"Title too long (max 120)."}), 400
+    db = get_db()
+    db.execute("INSERT INTO wishes (user_id,title,description,category) VALUES (?,?,?,?)",(uid,title,desc,cat))
+    db.commit()
+    wid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    wish = dict(db.execute('''
+        SELECT w.*, COALESCE(u.nickname,u.name) as author_name,
+               u.avatar_color as author_color, 0 as voted_by_me, 0 as vote_count
+        FROM wishes w JOIN users u ON w.user_id=u.id WHERE w.id=?
+    ''',(wid,)).fetchone())
+    db.close()
+    return jsonify(wish), 201
+
+@app.route("/api/wishes/<int:wid>/vote", methods=["POST"])
+def vote_wish(wid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    existing = db.execute("SELECT id FROM wish_votes WHERE wish_id=? AND user_id=?",(wid,uid)).fetchone()
+    if existing:
+        db.execute("DELETE FROM wish_votes WHERE wish_id=? AND user_id=?",(wid,uid))
+        db.execute("UPDATE wishes SET votes=MAX(0,votes-1) WHERE id=?",(wid,))
+        voted = False
+    else:
+        db.execute("INSERT INTO wish_votes (wish_id,user_id) VALUES (?,?)",(wid,uid))
+        db.execute("UPDATE wishes SET votes=votes+1 WHERE id=?",(wid,))
+        voted = True
+    db.commit()
+    votes = db.execute("SELECT votes FROM wishes WHERE id=?",(wid,)).fetchone()["votes"]
+    db.close()
+    return jsonify({"voted":voted,"votes":votes}), 200
+
+@app.route("/api/wishes/<int:wid>", methods=["DELETE"])
+def delete_wish(wid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    w  = db.execute("SELECT user_id FROM wishes WHERE id=?",(wid,)).fetchone()
+    me = db.execute("SELECT email FROM users WHERE id=?",(uid,)).fetchone()
+    if not w: db.close(); return jsonify({"message":"Not found"}), 404
+    if w["user_id"]!=uid and me["email"].lower() not in ADMIN_EMAILS:
+        db.close(); return jsonify({"message":"Not authorized"}), 403
+    db.execute("DELETE FROM wishes WHERE id=?",(wid,))
+    db.commit(); db.close()
+    return jsonify({"message":"Deleted."}), 200
+
+@app.route("/api/wishes/<int:wid>/status", methods=["PUT"])
+def update_wish_status(wid):
+    uid, err = require_admin()
+    if err: return err
+    status = (request.json or {}).get("status","open")
+    db = get_db()
+    db.execute("UPDATE wishes SET status=? WHERE id=?",(status,wid))
+    db.commit(); db.close()
+    return jsonify({"message":"Status updated."}), 200
+
 # ── Games ────────────────────────────────────────────────────────────────────
 
 import json as _json

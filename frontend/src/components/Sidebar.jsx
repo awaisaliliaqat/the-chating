@@ -22,6 +22,7 @@ const NAV = [
   { path: '/live',     icon: '📺', label: '🆕 Live'     },
   { path: '/events',   icon: '📅', label: '🆕 Events'   },
   { path: '/extras',   icon: '✨', label: '🆕 Extras'   },
+  { path: '/wishlist', icon: '🌟', label: 'Wish List'  },
 ]
 
 export default function Sidebar() {
