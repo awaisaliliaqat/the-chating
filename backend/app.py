@@ -84,6 +84,11 @@ ROOM_COLORS   = ["#6366f1","#ec4899","#10b981","#3b82f6","#f59e0b","#8b5cf6"]
 
 init_db()
 
+# ── Extra feature routes (games, per-friend streaks) ─────────────────────────
+# Imported lazily so require_auth and socketio are already defined when called.
+# The actual register_routes() call is at the bottom of this file, after
+# require_auth() is defined.
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def make_token(uid):
@@ -1062,6 +1067,8 @@ def on_send_message(data):
 
     # ── Check achievements ──
     check_message_achievements(db, uid)
+    # ── Update streak ──
+    update_streak(db, uid, to)
 
     # ── Push notification if receiver is offline ──
     if to not in user_sockets:
@@ -3432,6 +3439,513 @@ def create_achievement():
     except Exception: pass
     db.close()
     return jsonify({"message":f"Achievement '{name}' created."}), 201
+
+# ── Games ────────────────────────────────────────────────────────────────────
+
+import json as _json
+
+def _ttt_check_winner(board):
+    lines = [(0,1,2),(3,4,5),(6,7,8),(0,3,6),(1,4,7),(2,5,8),(0,4,8),(2,4,6)]
+    for a,b,c in lines:
+        if board[a] and board[a]==board[b]==board[c]: return board[a]
+    return None
+
+@app.route("/api/games/start", methods=["POST"])
+def start_game():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    opponent  = d.get("opponent_id")
+    game_type = d.get("game_type","tictactoe")
+    if not opponent: return jsonify({"message":"opponent_id required"}),400
+    db = get_db()
+    if game_type == "tictactoe":
+        state = {"board":[None]*9}
+    else:
+        state = {"choices":{}}
+    db.execute("INSERT INTO game_sessions (game_type,player1_id,player2_id,state_json,current_turn) VALUES (?,?,?,?,?)",
+               (game_type,uid,opponent,_json.dumps(state),uid))
+    db.commit()
+    gid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    if opponent in user_sockets:
+        socketio.emit("game_invite",{"game_id":gid,"game_type":game_type,"from":uid,"from_name":sender["name"]},to=f"user_{opponent}")
+    db.close()
+    return jsonify({"game_id":gid,"message":"Game started!"}),201
+
+@app.route("/api/games/<int:gid>", methods=["GET"])
+def get_game(gid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    g = db.execute("SELECT * FROM game_sessions WHERE id=?",(gid,)).fetchone()
+    if not g: db.close(); return jsonify({"message":"Not found"}),404
+    d = dict(g); d["state_json"] = _json.loads(d["state_json"])
+    db.close()
+    return jsonify(d),200
+
+@app.route("/api/games/<int:gid>/move", methods=["POST"])
+def make_move(gid):
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    db = get_db()
+    g = db.execute("SELECT * FROM game_sessions WHERE id=?",(gid,)).fetchone()
+    if not g or g["status"]!="active": db.close(); return jsonify({"message":"Game not active"}),400
+    if g["current_turn"]!=uid: db.close(); return jsonify({"message":"Not your turn"}),403
+    state = _json.loads(g["state_json"])
+    opponent = g["player2_id"] if g["player1_id"]==uid else g["player1_id"]
+
+    if g["game_type"] == "tictactoe":
+        pos = d.get("position")
+        mark = "X" if uid==g["player1_id"] else "O"
+        if state["board"][pos]: db.close(); return jsonify({"message":"Cell taken"}),400
+        state["board"][pos] = mark
+        winner_mark = _ttt_check_winner(state["board"])
+        if winner_mark:
+            winner_id = uid
+            db.execute("UPDATE game_sessions SET state_json=?,status='finished',winner_id=? WHERE id=?",(
+                _json.dumps(state),winner_id,gid))
+        elif None not in state["board"]:
+            db.execute("UPDATE game_sessions SET state_json=?,status='finished' WHERE id=?",(_json.dumps(state),gid))
+            winner_id = None
+        else:
+            db.execute("UPDATE game_sessions SET state_json=?,current_turn=? WHERE id=?",(_json.dumps(state),opponent,gid))
+            winner_id = None
+    else:  # rock-paper-scissors
+        choice = d.get("choice")
+        state["choices"][str(uid)] = choice
+        winner_id = None
+        if len(state["choices"]) == 2:
+            choices = list(state["choices"].values())
+            p_ids   = list(state["choices"].keys())
+            beats = {"rock":"scissors","scissors":"paper","paper":"rock"}
+            if choices[0] == choices[1]: winner_id = None
+            elif beats.get(choices[0]) == choices[1]: winner_id = int(p_ids[0])
+            else: winner_id = int(p_ids[1])
+            db.execute("UPDATE game_sessions SET state_json=?,status='finished',winner_id=? WHERE id=?",(_json.dumps(state),winner_id,gid))
+        else:
+            db.execute("UPDATE game_sessions SET state_json=?,current_turn=? WHERE id=?",(_json.dumps(state),opponent,gid))
+    db.commit()
+    g2 = dict(db.execute("SELECT * FROM game_sessions WHERE id=?",(gid,)).fetchone())
+    g2["state_json"] = _json.loads(g2["state_json"])
+    db.close()
+    socketio.emit("game_update",g2,to=f"user_{opponent}")
+    socketio.emit("game_update",g2,to=f"user_{uid}")
+    return jsonify(g2),200
+
+@app.route("/api/games/active", methods=["GET"])
+def active_games():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT g.*, u1.name as p1_name, u1.avatar_color as p1_color,
+               u2.name as p2_name, u2.avatar_color as p2_color
+        FROM game_sessions g
+        JOIN users u1 ON g.player1_id=u1.id
+        JOIN users u2 ON g.player2_id=u2.id
+        WHERE (g.player1_id=? OR g.player2_id=?) AND g.status="active"
+        ORDER BY g.created_at DESC
+    ''',(uid,uid)).fetchall()
+    db.close()
+    result = []
+    for r in rows:
+        d = dict(r); d["state_json"] = _json.loads(d["state_json"])
+        result.append(d)
+    return jsonify(result),200
+
+# ── Reminders ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/reminders", methods=["GET","POST"])
+def reminders():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT * FROM reminders WHERE user_id=? AND is_sent=0 ORDER BY remind_at ASC",(uid,)).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows]),200
+    d = request.json or {}
+    message   = (d.get("message") or "").strip()
+    remind_at = d.get("remind_at")
+    if not message or not remind_at: return jsonify({"message":"message and remind_at required"}),400
+    db.execute("INSERT INTO reminders (user_id,message,remind_at,chat_id) VALUES (?,?,?,?)",(uid,message,remind_at,d.get("chat_id")))
+    db.commit(); db.close()
+    return jsonify({"message":"Reminder set!"}),201
+
+@app.route("/api/reminders/<int:rid>", methods=["DELETE"])
+def delete_reminder(rid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("DELETE FROM reminders WHERE id=? AND user_id=?",(rid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Deleted."}),200
+
+# ── Stickers ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/stickers", methods=["GET","POST"])
+def stickers():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT s.*,u.name as creator_name FROM stickers s JOIN users u ON s.creator_id=u.id WHERE s.is_public=1 OR s.creator_id=? ORDER BY s.created_at DESC LIMIT 100",(uid,)).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows]),200
+    d = request.json or {}
+    image = d.get("image_b64")
+    name  = (d.get("emoji_name") or "").strip()
+    pack  = (d.get("pack_name") or "My Stickers").strip()
+    if not image: return jsonify({"message":"image_b64 required"}),400
+    db.execute("INSERT INTO stickers (creator_id,pack_name,emoji_name,image_b64,is_public) VALUES (?,?,?,?,?)",(uid,pack,name,image,int(d.get("is_public",1))))
+    db.commit()
+    sid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    sticker = dict(db.execute("SELECT * FROM stickers WHERE id=?",(sid,)).fetchone())
+    db.close()
+    return jsonify(sticker),201
+
+@app.route("/api/stickers/<int:sid>", methods=["DELETE"])
+def delete_sticker(sid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("DELETE FROM stickers WHERE id=? AND creator_id=?",(sid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Deleted."}),200
+
+# ── Profile Views ─────────────────────────────────────────────────────────────
+
+@app.route("/api/users/<int:tid>/view", methods=["POST"])
+def record_view(tid):
+    uid, err = require_auth()
+    if err: return err
+    if uid == tid: return jsonify({"message":"Cannot view own profile"}),200
+    db = get_db()
+    db.execute("INSERT INTO profile_views (profile_id,viewer_id) VALUES (?,?)",(tid,uid))
+    db.commit(); db.close()
+    return jsonify({"message":"Viewed."}),200
+
+@app.route("/api/users/my-views", methods=["GET"])
+def my_profile_views():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT pv.viewed_at, u.id, u.name, u.avatar_color, u.is_verified
+        FROM profile_views pv JOIN users u ON pv.viewer_id=u.id
+        WHERE pv.profile_id=? GROUP BY pv.viewer_id
+        ORDER BY pv.viewed_at DESC LIMIT 50
+    ''',(uid,)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+# ── Live Streams ──────────────────────────────────────────────────────────────
+
+live_stream_viewers = {}  # stream_id -> {user_id: socket_id}
+
+@app.route("/api/live-streams", methods=["GET","POST"])
+def live_streams():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute("SELECT ls.*,u.name as host_name,u.avatar_color as host_color FROM live_streams ls JOIN users u ON ls.host_id=u.id WHERE ls.is_active=1 ORDER BY ls.started_at DESC").fetchall()
+        result = [dict(r) for r in rows]
+        for r in result: r["viewer_count"] = len(live_stream_viewers.get(r["id"],{}))
+        db.close()
+        return jsonify(result),200
+    title = (request.json or {}).get("title","My Live Stream")
+    # End any existing active stream
+    db.execute("UPDATE live_streams SET is_active=0,ended_at=? WHERE host_id=? AND is_active=1",(datetime.datetime.utcnow().isoformat(),uid))
+    db.execute("INSERT INTO live_streams (host_id,title) VALUES (?,?)",(uid,title))
+    db.commit()
+    sid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    stream = dict(db.execute("SELECT * FROM live_streams WHERE id=?",(sid,)).fetchone())
+    db.close()
+    socketio.emit("live_stream_started",stream)
+    return jsonify(stream),201
+
+@app.route("/api/live-streams/<int:sid>", methods=["DELETE"])
+def end_stream(sid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    db.execute("UPDATE live_streams SET is_active=0,ended_at=? WHERE id=? AND host_id=?",(datetime.datetime.utcnow().isoformat(),sid,uid))
+    db.commit(); db.close()
+    live_stream_viewers.pop(sid,None)
+    socketio.emit("live_stream_ended",{"stream_id":sid})
+    return jsonify({"message":"Stream ended."}),200
+
+@socketio.on("join_live_stream")
+def on_join_stream(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    sid = data.get("stream_id")
+    if not sid: return
+    if sid not in live_stream_viewers: live_stream_viewers[sid] = {}
+    live_stream_viewers[sid][uid] = request.sid
+    join_room(f"stream_{sid}")
+    count = len(live_stream_viewers[sid])
+    emit("stream_viewer_count",{"stream_id":sid,"count":count},to=f"stream_{sid}")
+
+@socketio.on("leave_live_stream")
+def on_leave_stream(data):
+    uid = socket_users.get(request.sid)
+    sid = data.get("stream_id")
+    if uid and sid and sid in live_stream_viewers:
+        live_stream_viewers[sid].pop(uid,None)
+        leave_room(f"stream_{sid}")
+        count = len(live_stream_viewers[sid])
+        emit("stream_viewer_count",{"stream_id":sid,"count":count},to=f"stream_{sid}")
+
+@socketio.on("stream_video_frame")
+def on_stream_frame(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    sid = data.get("stream_id")
+    if sid: emit("stream_video_frame",{"stream_id":sid,"frame":data.get("frame")},to=f"stream_{sid}",include_self=False)
+
+@socketio.on("stream_audio")
+def on_stream_audio(data):
+    uid = socket_users.get(request.sid)
+    if not uid: return
+    sid = data.get("stream_id")
+    if sid: emit("stream_audio",{"stream_id":sid,"pcm16":data.get("pcm16"),"sampleRate":data.get("sampleRate",16000)},to=f"stream_{sid}",include_self=False)
+
+# ── Payment Requests ──────────────────────────────────────────────────────────
+
+@app.route("/api/payments/request", methods=["POST"])
+def send_payment_request():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    to  = d.get("to")
+    amt = d.get("amount")
+    if not to or not amt: return jsonify({"message":"to and amount required"}),400
+    db = get_db()
+    db.execute("INSERT INTO payment_requests (sender_id,receiver_id,amount,currency,note) VALUES (?,?,?,?,?)",
+               (uid,to,float(amt),d.get("currency","USD"),d.get("note","")))
+    db.commit()
+    pid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    sender = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    now = datetime.datetime.utcnow().isoformat()
+    # Send as a special message
+    db.execute("INSERT INTO messages (sender_id,receiver_id,content,msg_type,created_at) VALUES (?,?,?,?,?)",
+               (uid,to,f"💳 Payment Request: {d.get('currency','USD')} {amt} — {d.get('note','')}","payment",now))
+    db.commit()
+    mid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    msg = dict(db.execute("SELECT * FROM messages WHERE id=?",(mid,)).fetchone())
+    msg["reactions"]=[]; msg["reply_to"]=None
+    msg["payment_id"] = pid
+    db.close()
+    socketio.emit("new_message",msg,to=f"user_{to}")
+    socketio.emit("new_message",msg,to=f"user_{uid}")
+    return jsonify({"payment_id":pid,"message":"Request sent!"}),201
+
+@app.route("/api/payments/requests", methods=["GET"])
+def get_payment_requests():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT p.*,a.name as sender_name,a.avatar_color as sender_color,
+               b.name as receiver_name FROM payment_requests p
+        JOIN users a ON p.sender_id=a.id JOIN users b ON p.receiver_id=b.id
+        WHERE p.sender_id=? OR p.receiver_id=? ORDER BY p.created_at DESC LIMIT 50
+    ''',(uid,uid)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+@app.route("/api/payments/requests/<int:pid>", methods=["PUT"])
+def update_payment(pid):
+    uid, err = require_auth()
+    if err: return err
+    status = (request.json or {}).get("status","paid")
+    db = get_db()
+    pr = db.execute("SELECT * FROM payment_requests WHERE id=? AND receiver_id=?",(pid,uid)).fetchone()
+    if not pr: db.close(); return jsonify({"message":"Not found"}),404
+    db.execute("UPDATE payment_requests SET status=? WHERE id=?",(status,pid))
+    db.commit(); db.close()
+    return jsonify({"message":f"Marked as {status}."}),200
+
+# ── Business Profiles ─────────────────────────────────────────────────────────
+
+@app.route("/api/users/business", methods=["GET","PUT"])
+def my_business():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        bp = db.execute("SELECT * FROM business_profiles WHERE user_id=?",(uid,)).fetchone()
+        db.close()
+        return jsonify(dict(bp) if bp else {}),200
+    d = request.json or {}
+    db.execute("INSERT OR REPLACE INTO business_profiles (user_id,business_name,category,website,address,bio) VALUES (?,?,?,?,?,?)",
+               (uid,d.get("business_name",""),d.get("category",""),d.get("website",""),d.get("address",""),d.get("bio","")))
+    db.commit()
+    bp = dict(db.execute("SELECT * FROM business_profiles WHERE user_id=?",(uid,)).fetchone())
+    db.close()
+    return jsonify(bp),200
+
+@app.route("/api/users/<int:tid>/business", methods=["GET"])
+def user_business(tid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    bp = db.execute("SELECT bp.*,u.name,u.avatar_color,u.avatar_b64 FROM business_profiles bp JOIN users u ON bp.user_id=u.id WHERE bp.user_id=?",(tid,)).fetchone()
+    db.close()
+    return jsonify(dict(bp) if bp else {}),200
+
+@app.route("/api/users/businesses", methods=["GET"])
+def all_businesses():
+    uid, err = require_auth()
+    if err: return err
+    q = (request.args.get("q") or "").strip()
+    db = get_db()
+    if q:
+        rows = db.execute("SELECT bp.*,u.name,u.avatar_color FROM business_profiles bp JOIN users u ON bp.user_id=u.id WHERE bp.business_name LIKE ? OR bp.category LIKE ? LIMIT 30",(f"%{q}%",f"%{q}%")).fetchall()
+    else:
+        rows = db.execute("SELECT bp.*,u.name,u.avatar_color FROM business_profiles bp JOIN users u ON bp.user_id=u.id ORDER BY bp.created_at DESC LIMIT 30").fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+# ── Appointments ──────────────────────────────────────────────────────────────
+
+@app.route("/api/appointments", methods=["GET","POST"])
+def appointments():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    if request.method == "GET":
+        rows = db.execute('''
+            SELECT a.*,h.name as host_name,h.avatar_color as host_color,
+                   g.name as guest_name FROM appointments a
+            JOIN users h ON a.host_id=h.id JOIN users g ON a.guest_id=g.id
+            WHERE (a.host_id=? OR a.guest_id=?) AND a.starts_at>=datetime("now","-1 day")
+            ORDER BY a.starts_at ASC LIMIT 30
+        ''',(uid,uid)).fetchall()
+        db.close()
+        return jsonify([dict(r) for r in rows]),200
+    d = request.json or {}
+    guest    = d.get("guest_id")
+    title    = (d.get("title") or "").strip()
+    starts   = d.get("starts_at")
+    if not guest or not title or not starts: return jsonify({"message":"guest_id, title, starts_at required"}),400
+    db.execute("INSERT INTO appointments (host_id,guest_id,title,starts_at,notes) VALUES (?,?,?,?,?)",(uid,guest,title,starts,d.get("notes","")))
+    db.commit()
+    aid = db.execute("SELECT last_insert_rowid() as id").fetchone()["id"]
+    appt = dict(db.execute("SELECT * FROM appointments WHERE id=?",(aid,)).fetchone())
+    host = db.execute("SELECT * FROM users WHERE id=?",(uid,)).fetchone()
+    db.close()
+    if guest in user_sockets:
+        socketio.emit("appointment_request",{**appt,"host_name":host["name"]},to=f"user_{guest}")
+    return jsonify(appt),201
+
+@app.route("/api/appointments/<int:aid>", methods=["PUT","DELETE"])
+def appointment(aid):
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    a = db.execute("SELECT * FROM appointments WHERE id=? AND (host_id=? OR guest_id=?)",(aid,uid,uid)).fetchone()
+    if not a: db.close(); return jsonify({"message":"Not found"}),404
+    if request.method == "DELETE":
+        db.execute("UPDATE appointments SET status='cancelled' WHERE id=?",(aid,))
+    else:
+        status = (request.json or {}).get("status","confirmed")
+        db.execute("UPDATE appointments SET status=? WHERE id=?",(status,aid))
+    db.commit(); db.close()
+    return jsonify({"message":"Updated."}),200
+
+# ── Streaks ───────────────────────────────────────────────────────────────────
+
+def update_streak(db, uid1, uid2):
+    """Update or create message streak between two users."""
+    today = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+    u1, u2 = min(uid1,uid2), max(uid1,uid2)
+    streak = db.execute("SELECT * FROM message_streaks WHERE user1_id=? AND user2_id=?",(u1,u2)).fetchone()
+    if not streak:
+        db.execute("INSERT INTO message_streaks (user1_id,user2_id,streak_count,last_message_date) VALUES (?,?,1,?)",(u1,u2,today))
+    else:
+        last = streak["last_message_date"]
+        if last == today: return  # already counted today
+        yesterday = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        if last == yesterday:
+            db.execute("UPDATE message_streaks SET streak_count=streak_count+1,last_message_date=? WHERE user1_id=? AND user2_id=?",(today,u1,u2))
+        else:
+            db.execute("UPDATE message_streaks SET streak_count=1,last_message_date=? WHERE user1_id=? AND user2_id=?",(today,u1,u2))
+    db.commit()
+
+@app.route("/api/streaks", methods=["GET"])
+def get_streaks():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute('''
+        SELECT s.*, u.name as friend_name, u.avatar_color as friend_color
+        FROM message_streaks s
+        JOIN users u ON (CASE WHEN s.user1_id=? THEN s.user2_id ELSE s.user1_id END = u.id)
+        WHERE s.user1_id=? OR s.user2_id=? ORDER BY s.streak_count DESC LIMIT 20
+    ''',(uid,uid,uid)).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]),200
+
+# ── Smart Reply ───────────────────────────────────────────────────────────────
+
+SMART_REPLIES = {
+    "how are you": ["I'm good, thanks! 😊","Doing great! How about you?","Fine, and you?"],
+    "hello": ["Hi there! 👋","Hey! 😊","Hello!"],
+    "hi": ["Hey! 👋","Hi! 😊","Hello there!"],
+    "thanks": ["You're welcome! 😊","No problem!","Anytime! 👍"],
+    "ok": ["👍","Sounds good!","Alright!"],
+    "yes": ["Great! 🎉","👍 Perfect!","Awesome!"],
+    "no": ["That's okay","No worries","Understood"],
+    "bye": ["Goodbye! 👋","See you later! 👋","Take care! 😊"],
+    "good morning": ["Good morning! ☀️","Morning! 😊","Good morning! Have a great day!"],
+    "good night": ["Good night! 🌙","Sweet dreams! 💤","Good night! 😊"],
+}
+
+@app.route("/api/messages/smart-reply", methods=["POST"])
+def smart_reply():
+    uid, err = require_auth()
+    if err: return err
+    text = (request.json or {}).get("text","").lower().strip()
+    suggestions = ["👍","OK","Thanks!"]
+    for key, replies in SMART_REPLIES.items():
+        if key in text:
+            suggestions = replies
+            break
+    return jsonify({"suggestions": suggestions[:3]}),200
+
+# ── Translation ───────────────────────────────────────────────────────────────
+
+@app.route("/api/messages/translate", methods=["POST"])
+def translate_message():
+    uid, err = require_auth()
+    if err: return err
+    d = request.json or {}
+    text   = (d.get("text") or "").strip()
+    target = d.get("target_lang","en")
+    if not text: return jsonify({"translated":""}),200
+    try:
+        import requests as req
+        r = req.post("https://libretranslate.de/translate",
+                     json={"q":text,"source":"auto","target":target,"format":"text"},
+                     timeout=5)
+        if r.ok:
+            return jsonify({"translated": r.json().get("translatedText",text)}),200
+    except Exception:
+        pass
+    # Fallback: return original text
+    return jsonify({"translated": text, "note": "Translation service unavailable"}),200
+
+# ── Streak update hook for messages ──────────────────────────────────────────
+# (Add this call inside on_send_message after message is saved)
+
+# ── Register extra routes (games + per-friend streak endpoint) ────────────────
+from new_endpoints import register_routes as _register_extra_routes
+_register_extra_routes(app, require_auth, socketio)
 
 if __name__ == "__main__":
     port  = int(os.getenv("PORT",5001))

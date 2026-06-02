@@ -464,6 +464,105 @@ def init_db():
             UNIQUE(user_id, contact_id)
         );
 
+        CREATE TABLE IF NOT EXISTS game_sessions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            game_type    TEXT    NOT NULL DEFAULT 'tictactoe',
+            player1_id   INTEGER NOT NULL,
+            player2_id   INTEGER NOT NULL,
+            state_json   TEXT    NOT NULL DEFAULT '{}',
+            current_turn INTEGER NOT NULL DEFAULT 1,
+            winner_id    INTEGER,
+            status       TEXT    NOT NULL DEFAULT 'active',
+            created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (player1_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (player2_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS reminders (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL,
+            message    TEXT    NOT NULL,
+            remind_at  DATETIME NOT NULL,
+            is_sent    INTEGER NOT NULL DEFAULT 0,
+            chat_id    INTEGER,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS stickers (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            creator_id  INTEGER NOT NULL,
+            pack_name   TEXT    NOT NULL DEFAULT 'My Stickers',
+            emoji_name  TEXT    NOT NULL DEFAULT '',
+            image_b64   TEXT,
+            is_public   INTEGER NOT NULL DEFAULT 1,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS profile_views (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_id INTEGER NOT NULL,
+            viewer_id  INTEGER NOT NULL,
+            viewed_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (profile_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (viewer_id)  REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS live_streams (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            host_id     INTEGER NOT NULL,
+            title       TEXT    NOT NULL DEFAULT 'Live Stream',
+            is_active   INTEGER NOT NULL DEFAULT 1,
+            viewer_count INTEGER NOT NULL DEFAULT 0,
+            started_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            ended_at    DATETIME,
+            FOREIGN KEY (host_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS payment_requests (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id   INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            amount      REAL    NOT NULL,
+            currency    TEXT    NOT NULL DEFAULT 'USD',
+            note        TEXT    NOT NULL DEFAULT '',
+            status      TEXT    NOT NULL DEFAULT 'pending',
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (sender_id)   REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (receiver_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS business_profiles (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id       INTEGER NOT NULL UNIQUE,
+            business_name TEXT    NOT NULL DEFAULT '',
+            category      TEXT    NOT NULL DEFAULT '',
+            website       TEXT    NOT NULL DEFAULT '',
+            address       TEXT    NOT NULL DEFAULT '',
+            bio           TEXT    NOT NULL DEFAULT '',
+            is_verified   INTEGER NOT NULL DEFAULT 0,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS appointments (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            host_id    INTEGER NOT NULL,
+            guest_id   INTEGER NOT NULL,
+            title      TEXT    NOT NULL,
+            starts_at  DATETIME NOT NULL,
+            status     TEXT    NOT NULL DEFAULT 'pending',
+            notes      TEXT    NOT NULL DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (host_id)  REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (guest_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS message_streaks (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            user1_id         INTEGER NOT NULL,
+            user2_id         INTEGER NOT NULL,
+            streak_count     INTEGER NOT NULL DEFAULT 1,
+            last_message_date DATE,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user1_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (user2_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE(user1_id, user2_id)
+        );
+
         CREATE TABLE IF NOT EXISTS push_subscriptions (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id    INTEGER NOT NULL,

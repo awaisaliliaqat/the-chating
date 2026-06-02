@@ -12,6 +12,8 @@ const NAV = [
   { path: '/rooms',    icon: '🌐', label: 'Rooms'      },
   { path: '/friends',  icon: '🤝', label: 'Friends'    },
   { path: '/events',   icon: '📅', label: 'Events'     },
+  { path: '/games',    icon: '🎮', label: 'Games'      },
+  { path: '/live',     icon: '📺', label: 'Live'       },
   { path: '/extras',   icon: '✨', label: 'Extras'     },
   { path: '/contacts', icon: '📒', label: 'Contacts'   },
   { path: '/call-directory', icon: '📡', label: 'Call Anyone'  },

@@ -1,0 +1,57 @@
+.page{padding:20px 24px;height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:16px}
+.header{display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.title{font-size:22px;font-weight:700;color:var(--text-primary)}
+.challengeBtn{background:var(--accent);color:#fff;border:none;padding:10px 20px;border-radius:12px;font-size:14px;font-weight:700}
+.challengeBtn:hover{background:var(--accent-hover)}
+.section{display:flex;flex-direction:column;gap:8px}
+.sectionTitle{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)}
+.gameList{display:flex;flex-direction:column;gap:6px}
+.gameCard{display:flex;align-items:center;gap:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:14px;padding:12px 16px;cursor:pointer;transition:all .15s;position:relative}
+.gameCard:hover{border-color:var(--accent)}
+.myTurn{border-color:rgba(34,197,94,.4);background:rgba(34,197,94,.04);animation:glowPulse 2s ease infinite}
+@keyframes glowPulse{0%,100%{box-shadow:none}50%{box-shadow:0 0 12px rgba(34,197,94,.3)}}
+.gameCardIcon{font-size:28px;flex-shrink:0}
+.gameCardInfo{flex:1}
+.gameCardName{font-size:14px;font-weight:700;color:var(--text-primary)}
+.gameCardStatus{font-size:12px;color:var(--text-muted);margin-top:2px}
+.turnDot{width:10px;height:10px;border-radius:50%;background:var(--green);animation:blink 1s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.boardSection{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:20px}
+.boardHeader{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.backBtn{background:none;border:none;color:var(--accent);font-size:14px;font-weight:600;cursor:pointer}
+.boardTitle{font-size:16px;font-weight:700;color:var(--text-primary)}
+/* Tic-Tac-Toe */
+.tttBoard{display:flex;flex-direction:column;align-items:center;gap:10px}
+.tttBoard>:first-child{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;width:min(280px,80vw)}
+.tttCell{height:80px;border-radius:12px;background:var(--bg-secondary);border:2px solid var(--border);font-size:32px;font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.tttCell.available:hover{border-color:var(--accent);background:var(--accent-soft)}
+.tttCell.filled{cursor:default}
+.xMark{color:#ef4444}
+.oMark{color:#6366f1}
+.gameStatus{font-size:15px;font-weight:700;color:var(--text-primary);text-align:center;margin-top:8px}
+/* RPS */
+.rpsArea{display:flex;flex-direction:column;align-items:center;gap:12px}
+.rpsButtons{display:flex;gap:12px}
+.rpsBtn{background:var(--bg-secondary);border:2px solid var(--border);border-radius:16px;padding:16px 20px;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:13px;font-weight:600;color:var(--text-primary);transition:all .15s;cursor:pointer;min-width:90px}
+.rpsBtn:hover:not(:disabled){border-color:var(--accent);background:var(--accent-soft)}
+.rpsBtn:disabled{opacity:.5;cursor:not-allowed}
+.rpsPicked{border-color:var(--green)!important;background:var(--green-soft)!important;color:var(--green)!important}
+.rpsResult{font-size:32px;text-align:center;margin-top:4px}
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(6px);z-index:500;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:22px;width:min(380px,90vw);max-height:80vh;overflow-y:auto;box-shadow:var(--shadow)}
+.modalHeader{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.modalHeader h3{font-size:16px;font-weight:700;color:var(--text-primary)}
+.closeBtn{background:none;border:none;font-size:18px;color:var(--text-muted);padding:4px;border-radius:6px}
+.gameTypeRow{display:flex;gap:8px;margin-bottom:14px}
+.typeBtn{flex:1;background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:10px;font-size:13px;font-weight:600;color:var(--text-secondary);transition:all .15s}
+.typeBtn:hover{border-color:var(--accent);color:var(--accent)}
+.typeActive{background:var(--accent)!important;color:#fff!important;border-color:var(--accent)!important}
+.friendList{display:flex;flex-direction:column;gap:6px}
+.friendRow{display:flex;align-items:center;gap:10px;padding:10px;border-radius:10px;cursor:pointer;transition:background .15s}
+.friendRow:hover{background:var(--bg-hover)}
+.friendName{flex:1;font-size:14px;font-weight:600;color:var(--text-primary)}
+.challengeTag{font-size:12px;color:var(--accent);font-weight:600}
+.empty{text-align:center;padding:20px;color:var(--text-muted);font-size:13px}
+.emptyState{display:flex;flex-direction:column;align-items:center;padding:40px 20px;text-align:center;flex:1;justify-content:center}
+@media (max-width:768px){.page{padding:14px 12px}}

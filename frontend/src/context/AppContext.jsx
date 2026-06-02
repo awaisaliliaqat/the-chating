@@ -145,6 +145,19 @@ export function AppProvider({ children }) {
       }
     })
 
+    s.on('game_invite', d => {
+      addToast(`🎮 ${d.from_name} challenged you to ${d.game_type==='tictactoe'?'Tic-Tac-Toe ❌⭕':'Rock Paper Scissors ✊'}! Go to Games to play.`, 'info')
+    })
+    s.on('game_update', d => {
+      if (d.status==='finished' && (d.player1_id===uid||d.player2_id===uid)) {
+        if (d.winner_id===uid) addToast('🏆 You won the game!', 'success')
+        else if (d.winner_id) addToast('😢 You lost the game. Better luck next time!', 'info')
+        else addToast("🤝 Game ended in a draw!", 'info')
+      }
+    })
+    s.on('appointment_request', d => {
+      addToast(`📅 ${d.host_name} wants to book an appointment: "${d.title}"`, 'info')
+    })
     s.on('gift_received', d => {
       addToast(`${d.emoji} ${d.sender_name} sent you a ${d.name}! "${d.message||'💝'}"`, 'success')
     })

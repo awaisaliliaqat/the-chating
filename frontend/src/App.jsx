@@ -23,6 +23,8 @@ import CallDirectory from './pages/CallDirectory'
 import Feed          from './pages/Feed'
 import Events        from './pages/Events'
 import Extras        from './pages/Extras'
+import Games         from './pages/Games'
+import LiveStream    from './pages/LiveStream'
 
 function Layout({ children }) {
   return (
@@ -83,6 +85,8 @@ export default function App() {
         <Route path="/feed"          element={<Priv><Feed        /></Priv>} />
         <Route path="/events"        element={<Priv><Events      /></Priv>} />
         <Route path="/extras"        element={<Priv><Extras      /></Priv>} />
+        <Route path="/games"         element={<Priv><Games       /></Priv>} />
+        <Route path="/live"          element={<Priv><LiveStream  /></Priv>} />
         <Route path="*" element={<Navigate to={user?'/':'login'} />} />
       </Routes>
     </>
