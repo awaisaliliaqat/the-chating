@@ -1864,16 +1864,46 @@ def toggle_verified(tid):
 def warn_user(tid):
     uid, err = require_admin()
     if err: return err
-    reason = (request.json or {}).get("reason","No reason given.")
+    reason = (request.json or {}).get("reason","You have received a warning from admin.")
     db = get_db()
     db.execute("INSERT INTO user_warnings (user_id,admin_id,reason) VALUES (?,?,?)",(tid,uid,reason))
     db.commit()
     user = db.execute("SELECT * FROM users WHERE id=?",(tid,)).fetchone()
+    warning_count = db.execute("SELECT COUNT(*) as c FROM user_warnings WHERE user_id=?",(tid,)).fetchone()["c"]
     db.close()
-    # Notify the user via socket
-    if tid in user_sockets:
-        socketio.emit("warning_received",{"reason":reason},to=f"user_{tid}")
-    return jsonify({"message":"Warning sent."}),200
+
+    payload = {
+        "reason":   reason,
+        "count":    warning_count,
+        "from_admin": True,
+        "strike":   None,
+    }
+
+    # Always emit via socket (works if online)
+    socketio.emit("admin_warning", payload, to=f"user_{tid}")
+
+    # Also send push notification so they get it even if offline
+    send_push_to_user(
+        tid,
+        title="⚠️ Warning from Admin",
+        body=reason[:100],
+        data={"type":"admin_warning","reason":reason}
+    )
+
+    log_admin_action(uid, "WARN_USER", f"Warned user {tid}: {reason}")
+    return jsonify({"message":"Warning sent!", "warning_count": warning_count}), 200
+
+@app.route("/api/users/my-warnings", methods=["GET"])
+def my_warnings():
+    uid, err = require_auth()
+    if err: return err
+    db = get_db()
+    rows = db.execute(
+        "SELECT w.*, a.name as admin_name FROM user_warnings w JOIN users a ON w.admin_id=a.id WHERE w.user_id=? ORDER BY w.created_at DESC LIMIT 10",
+        (uid,)
+    ).fetchall()
+    db.close()
+    return jsonify([dict(r) for r in rows]), 200
 
 @app.route("/api/admin/users/<int:tid>/warnings", methods=["GET"])
 def get_warnings(tid):

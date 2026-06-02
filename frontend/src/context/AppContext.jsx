@@ -27,6 +27,7 @@ export function AppProvider({ children }) {
   const [isMuted,      setIsMuted]      = useState(false)
   const [isCameraOff,  setIsCameraOff]  = useState(false)
   const [micBlocked,   setMicBlocked]   = useState(false)
+  const [adminWarning, setAdminWarning] = useState(null)  // shown as full-screen alert
 
   const pcRef                = useRef(null)
   const callSpeechRef        = useRef(null)  // Speech recognition during calls
@@ -167,10 +168,15 @@ export function AppProvider({ children }) {
     s.on('sos_alert', d => {
       addToast(`🚨 SOS from ${d.name}! ${d.map_url}`, 'error')
     })
+    // Bad word auto-warning (from 3-strike system)
     s.on('warning_received', d => {
-      // Show the strike-based warning to the user
       const type = d.strike >= 3 ? 'error' : 'warning'
-      addToast(d.reason || `⚠️ Warning: ${d.reason}`, type)
+      addToast(d.reason || '⚠️ You used inappropriate language.', type)
+    })
+
+    // Admin-issued manual warning — show a big prominent dialog
+    s.on('admin_warning', d => {
+      setAdminWarning(d)
     })
 
     s.on('friend_request',  u => {
@@ -599,8 +605,20 @@ export function AppProvider({ children }) {
     localStorage.setItem('s_token', r.data.token)
     const me = await axios.get(`${API}/me`, { headers: { Authorization: `Bearer ${r.data.token}` } })
     setUser(me.data); setupSocket(r.data.token)
-    // Auto-subscribe to push notifications for offline call ringing
     setTimeout(() => subscribeToPush().catch(() => {}), 2000)
+    // Check for any pending warnings from admin
+    setTimeout(() => {
+      axios.get(`${API}/users/my-warnings`, { headers: { Authorization: `Bearer ${r.data.token}` } })
+        .then(res => {
+          if (res.data && res.data.length > 0) {
+            const latest = res.data[0]
+            const hourAgo = new Date(Date.now() - 24*60*60*1000).toISOString()
+            if (latest.created_at > hourAgo) {
+              setAdminWarning({ reason: latest.reason, count: res.data.length, from_admin: true })
+            }
+          }
+        }).catch(() => {})
+    }, 3000)
     return r.data
   }
 
@@ -626,6 +644,7 @@ export function AppProvider({ children }) {
       toasts, addToast, removeToast,
       onlineUsers, availableUsers, badWordAlerts, setBadWordAlerts,
       micBlocked, setMicBlocked, subscribeToPush,
+      adminWarning, setAdminWarning,
       incomingCall, activeCall,
       localStream, remoteStream, remoteVideoFrame,
       callDuration, isMuted, isCameraOff,

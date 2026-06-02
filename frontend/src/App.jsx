@@ -60,10 +60,60 @@ export default function App() {
     </div>
   )
 
+  // Admin warning full-screen dialog
+  const { adminWarning, setAdminWarning } = useContext(AppContext)
+
   return (
     <>
       <Toast />
       {user && <NotifSetup />}
+
+      {/* ── Admin Warning Dialog ── */}
+      {adminWarning && (
+        <div style={{
+          position:'fixed',inset:0,background:'rgba(0,0,0,.85)',
+          backdropFilter:'blur(8px)',zIndex:9999,
+          display:'flex',alignItems:'center',justifyContent:'center',padding:20
+        }}>
+          <div style={{
+            background:'var(--bg-card)',border:'2px solid var(--yellow)',
+            borderRadius:20,padding:32,maxWidth:420,width:'100%',textAlign:'center',
+            boxShadow:'0 0 40px rgba(245,158,11,.3)'
+          }}>
+            <div style={{fontSize:56,marginBottom:8}}>⚠️</div>
+            <div style={{fontSize:20,fontWeight:800,color:'var(--yellow)',marginBottom:8}}>
+              Official Warning
+            </div>
+            <div style={{fontSize:14,color:'var(--text-secondary)',marginBottom:16}}>
+              You have received a warning from the admin:
+            </div>
+            <div style={{
+              background:'rgba(245,158,11,.1)',border:'1px solid rgba(245,158,11,.3)',
+              borderRadius:12,padding:'14px 18px',fontSize:15,
+              color:'var(--text-primary)',fontWeight:600,marginBottom:20,lineHeight:1.6
+            }}>
+              "{adminWarning.reason}"
+            </div>
+            {adminWarning.count > 1 && (
+              <div style={{fontSize:12,color:'var(--text-muted)',marginBottom:16}}>
+                You have received {adminWarning.count} warning{adminWarning.count>1?'s':''} total.
+                Continued violations may result in a ban.
+              </div>
+            )}
+            <button
+              onClick={() => setAdminWarning(null)}
+              style={{
+                background:'var(--yellow)',color:'#000',border:'none',
+                padding:'12px 32px',borderRadius:12,fontSize:15,fontWeight:800,
+                width:'100%'
+              }}
+            >
+              I Understand ✓
+            </button>
+          </div>
+        </div>
+      )}
+
       <InstallBanner />
       {(incomingCall || activeCall) && <CallModal />}
       <Routes>
