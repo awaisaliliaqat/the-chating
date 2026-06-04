@@ -1,0 +1,27 @@
+{
+  "appId": "com.thechating.app",
+  "appName": "THE CHATING",
+  "webDir": "dist",
+  "server": {
+    "url": "https://the-chating.trading-ai.bot",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#0d0f1a"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#0d0f1a",
+      "showSpinner": false
+    },
+    "PushNotifications": {
+      "presentationOptions": [
+        "badge",
+        "sound",
+        "alert"
+      ]
+    }
+  }
+}
